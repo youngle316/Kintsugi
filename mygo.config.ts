@@ -20,13 +20,6 @@ export default defineConfig({
   identifier: "com.youngle316.kintsugi",
   // The version is package.json's; the release workflow checks the tag.
   version: pkg.version,
-  // `mygo dev` runs devCommand and loads devUrl; `mygo build` runs
-  // buildCommand and embeds frontendDist into the app.
-  devUrl: "http://localhost:5173",
-  devCommand: "bun run dev:web",
-  buildCommand: "bun run build:web",
-  frontendDist: "dist",
-  bindings: "src/mygo.ts",
   out: "build",
   ...(UPDATE_PUBLIC_KEY && {
     updates: { publicKey: UPDATE_PUBLIC_KEY, github: "youngle316/Kintsugi" },

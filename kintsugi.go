@@ -17,6 +17,7 @@ import (
 	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/plugins/permissionflow"
 	"github.com/egoist/mygo/plugins/updater"
+	"github.com/egoist/mygo/ui"
 	"github.com/youngle316/kintsugi/internal/llm"
 	"github.com/youngle316/kintsugi/internal/settings"
 	"github.com/youngle316/kintsugi/internal/store"
@@ -26,7 +27,8 @@ import (
 // apiKeySecret is the Keychain account of the SiliconFlow API key.
 const apiKeySecret = "siliconflow-api-key"
 
-// Kintsugi is the app's backend, which the pages call.
+// Kintsugi is the app: the check, the windows that show it, and what they
+// call.
 type Kintsugi struct {
 	settings *settings.File
 	db       *store.Store
@@ -39,33 +41,27 @@ type Kintsugi struct {
 	tray     *mygo.Tray
 	busy     bool
 	current  *Check // what the panel shows
-	lastLog  []string
+
+	// The state of the windows' views, read and changed on the main
+	// thread only.
+	view  mainState
+	board panelState
 }
 
 // Check is a correction the panel shows.
 type Check struct {
 	// State is "loading", "done" or "error".
-	State        string      `json:"state"`
-	ID           int64       `json:"id"`
-	Original     string      `json:"original"`
-	Result       *llm.Result `json:"result"`
-	Error        string      `json:"error,omitempty"`
-	Method       string      `json:"method"`
-	WholeField   bool        `json:"wholeField"`
-	Language     string      `json:"language"`
-	CanReplace   bool        `json:"canReplace"`
-	ManualMode   bool        `json:"manualMode"`
-	ActionResult string      `json:"actionResult,omitempty"`
+	State      string
+	ID         int64
+	Original   string
+	Result     *llm.Result
+	Error      string
+	Method     string
+	WholeField bool
+	Language   string
+	CanReplace bool
+	ManualMode bool
 }
-
-// CheckChanged is sent to the panel as a check goes on.
-var CheckChanged = mygo.NewEvent[Check]("check:changed")
-
-// DataChanged is sent to the main window when a check is saved.
-var DataChanged = mygo.NewEvent[int64]("data:changed")
-
-// Navigate tells the main window which tab to show.
-var Navigate = mygo.NewEvent[string]("navigate")
 
 // ---- The check ----
 
@@ -112,7 +108,7 @@ func (k *Kintsugi) checkSelection() {
 	}
 	c.ID, c.Result, c.State = id, &res, "done"
 	k.update(c)
-	_ = DataChanged.Broadcast(id)
+	k.reload()
 }
 
 // read gets the text to check: the selection of the app in front, read
@@ -133,9 +129,6 @@ func (k *Kintsugi) read(c *Check) (string, *capture.Rect, error) {
 	sel, err := k.capture.GetSelectedText(capture.ReadOptions{
 		AX: true, Clipboard: true, WholeField: true,
 	})
-	k.mu.Lock()
-	k.lastLog = sel.Log
-	k.mu.Unlock()
 	if err != nil {
 		if errors.Is(err, capture.ErrNoText) {
 			return "", nil, errors.New("nothing to check: select some text first")
@@ -146,7 +139,7 @@ func (k *Kintsugi) read(c *Check) (string, *capture.Rect, error) {
 	return sel.Text, sel.Caret, nil
 }
 
-// update sends the check to the panel.
+// update shows the check in the panel.
 func (k *Kintsugi) update(c *Check) {
 	k.mu.Lock()
 	cp := *c
@@ -154,13 +147,13 @@ func (k *Kintsugi) update(c *Check) {
 	p := k.panel
 	k.mu.Unlock()
 	if p != nil {
-		_ = CheckChanged.Emit(p, cp)
+		p.Update(func() { k.board.hot = -1 })
 	}
 }
 
 // ---- What the panel calls ----
 
-// Current returns what the panel shows, for a page that just loaded.
+// Current returns what the panel shows.
 func (k *Kintsugi) Current() *Check {
 	k.mu.Lock()
 	defer k.mu.Unlock()
@@ -173,7 +166,8 @@ func (k *Kintsugi) Current() *Check {
 
 // Replace writes the correction back where it was read, then hides the
 // panel. Without the native module it puts the correction on the
-// clipboard instead.
+// clipboard instead. It waits for the app it writes to, so it runs off the
+// main thread.
 func (k *Kintsugi) Replace(id int64, text string) (string, error) {
 	k.hidePanel()
 	c := k.Current()
@@ -183,9 +177,6 @@ func (k *Kintsugi) Replace(id int64, text string) (string, error) {
 		return "copied", nil
 	}
 	res, err := k.capture.ReplaceSelection(text, capture.WriteOptions{AX: true, Paste: true})
-	k.mu.Lock()
-	k.lastLog = append(k.lastLog, res.Log...)
-	k.mu.Unlock()
 	if err != nil {
 		// Nothing written: the correction stays on the clipboard to paste.
 		mygo.Clipboard.WriteText(text)
@@ -213,7 +204,7 @@ func (k *Kintsugi) setAction(id int64, action string) {
 	if err := k.db.SetAction(context.Background(), id, action); err != nil {
 		log.Println("saving the action:", err)
 	}
-	_ = DataChanged.Broadcast(id)
+	k.reload()
 }
 
 // ---- What the main window calls ----
@@ -226,17 +217,6 @@ func (k *Kintsugi) Overview(ctx context.Context, days int) (store.Overview, erro
 	}
 	return k.db.Overview(ctx, since)
 }
-
-// Issues lists the mistakes f selects.
-func (k *Kintsugi) Issues(ctx context.Context, f store.Filter) ([]store.IssueRow, error) {
-	return k.db.Issues(ctx, f)
-}
-
-// Categories are the kinds of mistakes.
-func (k *Kintsugi) Categories() []string { return llm.Categories }
-
-// Settings returns the settings.
-func (k *Kintsugi) Settings() settings.Settings { return k.settings.Get() }
 
 // SaveSettings saves the settings and registers the shortcut they name.
 func (k *Kintsugi) SaveSettings(s settings.Settings) (settings.Settings, error) {
@@ -301,8 +281,8 @@ func (k *Kintsugi) TestModel(ctx context.Context, model string) (string, error) 
 // PermissionState is whether Kintsugi may read other apps.
 type PermissionState struct {
 	// Available is false where the capture module is missing.
-	Available bool `json:"available"`
-	Trusted   bool `json:"trusted"`
+	Available bool
+	Trusted   bool
 }
 
 // Permission reports the Accessibility permission.
@@ -323,18 +303,15 @@ func (k *Kintsugi) GuidePermission(ctx context.Context) (PermissionState, error)
 	return k.Permission(), err
 }
 
-// OpenAtLogin reports whether Kintsugi starts at login.
-func (k *Kintsugi) OpenAtLogin() bool { return mygo.App.OpenAtLogin() }
-
 // SetOpenAtLogin starts Kintsugi at login, or stops.
 func (k *Kintsugi) SetOpenAtLogin(open bool) error { return mygo.App.SetOpenAtLogin(open) }
 
 // VersionInfo is the running version and whether it can update itself.
 type VersionInfo struct {
-	Version   string `json:"version"`
-	CanUpdate bool   `json:"canUpdate"`
+	Version   string
+	CanUpdate bool
 	// Available is a newer version a check found, "" when none.
-	Available string `json:"available"`
+	Available string
 }
 
 // Version returns the running version.
@@ -353,32 +330,33 @@ func (k *Kintsugi) FinishOnboarding() error {
 	return err
 }
 
-// CaptureLog returns what the last read and write found, step by step.
-func (k *Kintsugi) CaptureLog() []string {
-	k.mu.Lock()
-	defer k.mu.Unlock()
-	return append([]string(nil), k.lastLog...)
-}
-
 // ---- Windows and the menu bar ----
 
-// OpenWindow shows the main window at a tab ("" for the default).
-func (k *Kintsugi) OpenWindow(tab string) {
+// OpenWindow shows the main window at a page ("" for the default: the
+// first-run guide until it is done, else the overview).
+func (k *Kintsugi) OpenWindow(page string) {
+	if page == "" {
+		page = pageOverview
+		if !k.settings.Get().Onboarded || !k.HasAPIKey() {
+			page = pageWelcome
+		}
+	}
 	mygo.RunOnMain(func() {
 		if k.main == nil || k.main.IsDestroyed() {
 			k.main = mygo.NewWindow(mygo.WindowOptions{
-				Title: "Kintsugi", Width: 1040, Height: 720, MinWidth: 760, MinHeight: 520,
-				BackgroundColor: "light-dark(#faf8f3, #16140f)",
-				StateKey:        "main",
-				URL:             "/",
+				Title: "Kintsugi", Width: 1080, Height: 740, MinWidth: 820, MinHeight: 540,
+				TitleBarStyle:        mygo.TitleBarHidden,
+				TrafficLightPosition: &mygo.Point{X: 18, Y: 18},
+				Vibrancy:             mygo.VibrancySidebar,
+				BackgroundColor:      "light-dark(#f8f8f8, #000000)",
+				StateKey:             "main",
+				Content:              ui.View(k.mainView),
 			})
 		}
+		k.navigate(page)
 		k.main.Show()
 		mygo.App.Focus()
 	})
-	if tab != "" {
-		_ = Navigate.Emit(k.main, tab)
-	}
 }
 
 func (k *Kintsugi) makePanel() {
@@ -386,7 +364,7 @@ func (k *Kintsugi) makePanel() {
 		Panel: true, Hidden: true, Frameless: true, Transparent: true,
 		Vibrancy: mygo.VibrancyHUD, CornerRadius: 14,
 		Width: 520, Height: 440, MinHeight: 160, MaxHeight: 640,
-		URL: "/panel",
+		Content: ui.View(k.panelView),
 	})
 	// Hide rather than close, so that it shows at once the next time.
 	p.OnClose(func(e *mygo.CloseEvent) {

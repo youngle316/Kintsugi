@@ -5,7 +5,8 @@
 // capture, a Swift native module), a chat model of SiliconFlow corrects it
 // (internal/llm), a panel that leaves that app in front shows the result,
 // and every check is saved in SQLite (internal/store). The main window, a
-// web page, shows the statistics, the mistakes and the settings.
+// window of native UI drawn with Lobe MyGo's components, shows the
+// statistics, the mistakes and the settings.
 package main
 
 import (
@@ -28,9 +29,8 @@ func main() {
 	if os.Getenv("MYGO_GENERATE") == "" && !mygo.App.RequestSingleInstanceLock() {
 		return
 	}
-	k := &Kintsugi{}
+	k := &Kintsugi{view: mainState{rangeIndex: 1}} // the overview of 30 days
 	mygo.App.OnSecondInstance(func([]string, string) { go k.OpenWindow("") })
-	mygo.Bind(k)
 	// Checks GitHub Releases in the background and offers new versions;
 	// builds without updates (development, no public key) never check.
 	mygo.Use(updater.Plugin)
