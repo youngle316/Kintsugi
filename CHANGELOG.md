@@ -3,6 +3,16 @@
 Each version's section is its release notes: the update window shows it,
 and the release workflow puts it on the GitHub release.
 
+## 0.3.0
+
+- A new icon: a bowl mended with gold, the same in the menu bar, the Dock
+  and the windows.
+- Pin the correction panel to keep it up while you go back to writing; drag
+  it by any free part of it.
+- Quit in the menu bar quits again.
+- The filters of Mistakes scroll through all the types, and fit in one row.
+- Settings keep their labels on one line in a narrow window.
+
 ## 0.2.0
 
 - A redesigned main window and correction panel.
