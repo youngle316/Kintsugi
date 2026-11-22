@@ -3,6 +3,12 @@
 Each version's section is its release notes: the update window shows it,
 and the release workflow puts it on the GitHub release.
 
+## 0.2.0
+
+- A redesigned main window and correction panel.
+- Every app is checked the same way; per-app capture modes are gone.
+- The Capture Lab is removed.
+
 ## 0.1.0
 
 The first release.
