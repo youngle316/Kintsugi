@@ -91,22 +91,6 @@ type WriteResult struct {
 	Log      []string
 }
 
-// Focus describes the focused element of the app in front, for diagnostics.
-type Focus struct {
-	App      AppInfo
-	Role     string
-	Subrole  string
-	Settable []string
-	// Attributes are the names of the element's attributes.
-	Attributes []string
-	// SelectedText and Value are what the attributes hold, cut to 200
-	// characters; ValueLength is the whole value's length.
-	SelectedText string
-	Value        string
-	ValueLength  int
-	Log          []string
-}
-
 var (
 	// ErrNotTrusted: the app lacks the Accessibility permission.
 	ErrNotTrusted = native.NewError("not_trusted")
@@ -136,6 +120,4 @@ type Capture interface {
 	// accessibility API, then with a simulated ⌘V, as opts allow. A paste
 	// restores the clipboard afterwards.
 	ReplaceSelection(text string, opts WriteOptions) (WriteResult, error)
-	// InspectFocus describes the focused element of the app in front.
-	InspectFocus() (Focus, error)
 }

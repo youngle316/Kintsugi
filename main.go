@@ -74,11 +74,6 @@ func (k *Kintsugi) start() error {
 	if err := k.registerShortcut(k.settings.Get().Shortcut); err != nil {
 		log.Println("shortcut:", err)
 	}
-	if k.capture != nil {
-		if err := mygo.GlobalShortcut.Register(LabShortcut, func() { go k.runLab() }); err != nil {
-			log.Println("lab shortcut:", err)
-		}
-	}
 	s := k.settings.Get()
 	if !s.Onboarded || !k.HasAPIKey() || !k.Permission().Trusted && k.capture != nil {
 		k.OpenWindow("")

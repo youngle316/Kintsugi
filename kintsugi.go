@@ -452,7 +452,6 @@ func (k *Kintsugi) makeTray() {
 			mygo.Separator(),
 			{Label: "Open Kintsugi", Click: func(*mygo.MenuItem, *mygo.Window) { go k.OpenWindow("overview") }},
 			{Label: "Mistakes", Click: func(*mygo.MenuItem, *mygo.Window) { go k.OpenWindow("mistakes") }},
-			{Label: "Capture Lab (step 0)", Click: func(*mygo.MenuItem, *mygo.Window) { go k.OpenWindow("lab") }},
 			{Label: "Settings…", Accelerator: "Cmd+,", Click: func(*mygo.MenuItem, *mygo.Window) { go k.OpenWindow("settings") }},
 			updater.MenuItem(),
 			mygo.Separator(),

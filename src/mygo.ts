@@ -4,13 +4,6 @@ import { bind, event } from "mygo-runtime";
 
 // ---- Types ----
 
-/** AppInfo is a running app. */
-export interface AppInfo {
-  BundleID: string;
-  Name: string;
-  PID: number;
-}
-
 /** CaptureMode says how Kintsugi reads text from an app. */
 export type CaptureMode = "auto" | "clipboard" | "manual";
 
@@ -52,24 +45,6 @@ export interface Filter {
   offset: number;
 }
 
-/** Focus describes the focused element of the app in front, for diagnostics. */
-export interface Focus {
-  App: AppInfo;
-  Role: string;
-  Subrole: string;
-  Settable: string[];
-  /** Attributes are the names of the element's attributes. */
-  Attributes: string[];
-  /**
-   * SelectedText and Value are what the attributes hold, cut to 200
-   * characters; ValueLength is the whole value's length.
-   */
-  SelectedText: string;
-  Value: string;
-  ValueLength: number;
-  Log: string[];
-}
-
 /** Issue is one mistake the model found. */
 export interface Issue {
   original: string;
@@ -99,37 +74,6 @@ export interface IssueRow {
   explanationZh: string;
   explanationEn: string;
   sentence: string;
-}
-
-/** LabAttempt is one method tried. */
-export interface LabAttempt {
-  /** ax, clipboard, ax_write, paste_write */
-  method: string;
-  ok: boolean;
-  detail: string;
-  log: string[];
-}
-
-/** LabRun is a test in one app. */
-export interface LabRun {
-  id: number;
-  /** Unix milliseconds */
-  time: number;
-  app: string;
-  bundleId: string;
-  role: string;
-  /** what the user tested, e.g. "Amp web, Safari" */
-  note: string;
-  /** what was read, cut to 200 characters */
-  text: string;
-  reads: LabAttempt[];
-  writes: LabAttempt[];
-  /**
-   * Confirmed are the user's answers to whether each write showed in
-   * the app: by method, "yes" or "no".
-   */
-  confirmed: Record<string, string>;
-  focus: Focus;
 }
 
 /** Language is the language of explanations. */
@@ -218,20 +162,6 @@ export const Kintsugi = {
   hasAPIKey: bind<[], boolean>("Kintsugi.HasAPIKey", () => []),
   /** Issues lists the mistakes f selects. */
   issues: bind<[Filter], IssueRow[]>("Kintsugi.Issues", (f: Filter) => [f]),
-  /** LabDelete removes a run; id 0 removes them all. */
-  labDelete: bind<[number], void>("Kintsugi.LabDelete", (id: number) => [id]),
-  /** LabRuns returns the lab's results. */
-  labRuns: bind<[], LabRun[]>("Kintsugi.LabRuns", () => []),
-  /** LabShortcut is the shortcut that runs the lab. */
-  labShortcut: bind<[], string>("Kintsugi.LabShortcut", () => []),
-  /** LabUpdate saves the user's note and answers for a run. */
-  labUpdate: bind<[number, string, Record<string, string>], void>("Kintsugi.LabUpdate", (id: number, note: string, confirmed: Record<string, string>) => [id, note, confirmed]),
-  /**
-   * LabWrite writes back, in the app of the newest run, its text with a
-   * marker, by one method alone ("ax" or "paste"). It needs the run to be
-   * the last read, as it writes where that read was.
-   */
-  labWrite: bind<[number, string], LabRun>("Kintsugi.LabWrite", (id: number, method: string) => [id, method]),
   /** OpenAtLogin reports whether Kintsugi starts at login. */
   openAtLogin: bind<[], boolean>("Kintsugi.OpenAtLogin", () => []),
   /** OpenWindow shows the main window at a tab ("" for the default). */
@@ -269,6 +199,4 @@ export const events = {
   dataChanged: event<number>("data:changed"),
   /** Navigate tells the main window which tab to show. */
   navigate: event<string>("navigate"),
-  /** LabChanged is sent when a lab run is added or changes. */
-  labChanged: event<LabRun[]>("lab:changed"),
 } as const;

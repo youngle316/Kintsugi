@@ -132,32 +132,6 @@ final class SystemCapture: Capture {
         throw CaptureError.writeFailed
     }
 
-    func inspectFocus() throws -> Focus {
-        guard AXIsProcessTrusted() else { throw CaptureError.notTrusted }
-        guard let app = NSWorkspace.shared.frontmostApplication else { throw CaptureError.noTarget }
-        var log: [String] = []
-        guard let element = focusedElement(pid: app.processIdentifier, log: &log) else {
-            return Focus(app: AppInfo(app), role: "", subrole: "", selectedText: "", value: "", valueLength: 0, log: log)
-        }
-        var names: CFArray?
-        AXUIElementCopyAttributeNames(element, &names)
-        let attributes = (names as? [String]) ?? []
-        let settable = [kAXValueAttribute, kAXSelectedTextAttribute, kAXSelectedTextRangeAttribute]
-            .filter { isSettable(element, $0) }
-        let value = stringAttribute(element, kAXValueAttribute) ?? ""
-        return Focus(
-            app: AppInfo(app),
-            role: stringAttribute(element, kAXRoleAttribute) ?? "",
-            subrole: stringAttribute(element, kAXSubroleAttribute) ?? "",
-            settable: settable,
-            attributes: attributes,
-            selectedText: String((stringAttribute(element, kAXSelectedTextAttribute) ?? "").prefix(200)),
-            value: String(value.prefix(200)),
-            valueLength: value.count,
-            log: log
-        )
-    }
-
     // MARK: The accessibility API
 
     /// The focused element of the app, with Electron's and Chromium's

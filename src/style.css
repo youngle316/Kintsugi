@@ -80,15 +80,8 @@ table.list { background: var(--surface); border: 1px solid var(--border); border
 table.list th { text-align: left; font-size: 12px; color: var(--muted); font-weight: 500; padding: 8px 10px; border-bottom: 1px solid var(--border); }
 table.list td { padding: 8px 10px; border-bottom: 1px solid var(--border); vertical-align: top; }
 table.list tr:last-child td { border: 0; }
-table.lab td { padding: 5px 8px; border-top: 1px solid var(--border); vertical-align: top; }
-table.lab td:first-child { width: 190px; }
-table.lab td:nth-child(2) { width: 28px; font-size: 16px; }
 table.modes td { padding: 4px 6px 4px 0; }
 table.modes input { width: 100%; }
-.steps { padding-left: 20px; }
-.steps li { margin-bottom: 6px; }
-blockquote { margin: 8px 0; padding: 6px 10px; border-left: 3px solid var(--gold); background: var(--bg); border-radius: 0 6px 6px 0; white-space: pre-wrap; }
-.run .row { margin-top: 10px; }
 .form label { display: flex; flex-direction: column; gap: 4px; margin-bottom: 12px; }
 .form label.check { flex-direction: row; align-items: center; }
 .form label .row input { flex: 1; }
