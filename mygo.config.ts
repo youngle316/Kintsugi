@@ -7,12 +7,12 @@ import pkg from "./package.json" with { type: "json" };
 // UPDATE_PUBLIC_KEY: the contents of mygo-update.pub (`go tool mygo keygen`).
 // The private key stays out of the repository, in the MYGO_UPDATER_PRIVATE_KEY
 // secret: apps accept only updates signed with it.
-const UPDATE_PUBLIC_KEY = "";
+const UPDATE_PUBLIC_KEY = "wHdH3Ul08k8VoS44qTRTBR57q7fBoK0oRc8AQarMVy4=";
 // SIGNING_IDENTITY: the Apple Development certificate of the Personal Team,
 // as `security find-identity -v -p codesigning` prints it:
 // "Apple Development: name (XXXXXXXXXX)". Every version must be signed with
 // it, or macOS forgets the Accessibility permission after an update.
-const SIGNING_IDENTITY = "";
+const SIGNING_IDENTITY = "Apple Development: youngle316@gmail.com (K542289BP9)";
 
 export default defineConfig({
   name: "Kintsugi",
