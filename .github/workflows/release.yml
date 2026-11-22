@@ -1,0 +1,97 @@
+name: Release
+
+# Pushing a tag such as v0.1.0 builds the universal macOS app, signs it with
+# the Apple Development certificate, signs its update with the updater key,
+# and publishes the GitHub release, from which installed apps update.
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write # the release, and the uploads to it
+
+concurrency:
+  group: release-${{ github.ref_name }}
+
+jobs:
+  release:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Check the tag, the version and the release values
+        run: |
+          version="$(jq -r .version package.json)"
+          if [ "$GITHUB_REF_NAME" != "v$version" ]; then
+            echo "::error::The tag $GITHUB_REF_NAME is not v$version, the version in package.json"
+            exit 1
+          fi
+          grep -q "^## $version\$" CHANGELOG.md || { echo "::error::CHANGELOG.md has no '## $version' section"; exit 1; }
+          grep -Eq '^const UPDATE_PUBLIC_KEY = "[^"]+";' mygo.config.ts || { echo "::error::Set UPDATE_PUBLIC_KEY in mygo.config.ts"; exit 1; }
+          identity="$(sed -nE 's/^const SIGNING_IDENTITY = "(.+)";$/\1/p' mygo.config.ts)"
+          [ -n "$identity" ] || { echo "::error::Set SIGNING_IDENTITY in mygo.config.ts"; exit 1; }
+          echo "SIGNING_IDENTITY=$identity" >> "$GITHUB_ENV"
+
+      - uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+      # The version of packageManager in package.json, the one that wrote
+      # bun.lock: an older Bun stops at "Unknown lockfile version".
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version-file: package.json
+      - run: bun install --frozen-lockfile
+
+      - name: Import the signing certificate
+        env:
+          MACOS_CERTIFICATE: ${{ secrets.MACOS_CERTIFICATE }}
+          MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+        run: |
+          keychain="$RUNNER_TEMP/signing.keychain-db"
+          password="$(openssl rand -base64 24)"
+          security create-keychain -p "$password" "$keychain"
+          security set-keychain-settings -lut 21600 "$keychain"
+          security unlock-keychain -p "$password" "$keychain"
+          echo "$MACOS_CERTIFICATE" | base64 --decode > "$RUNNER_TEMP/certificate.p12"
+          security import "$RUNNER_TEMP/certificate.p12" -k "$keychain" \
+            -P "$MACOS_CERTIFICATE_PASSWORD" -T /usr/bin/codesign
+          rm "$RUNNER_TEMP/certificate.p12"
+          # The intermediate that issues Apple Development certificates,
+          # which codesign needs to build the chain.
+          curl -fsSL https://www.apple.com/certificateauthority/AppleWWDRCAG3.cer -o "$RUNNER_TEMP/wwdr.cer"
+          security import "$RUNNER_TEMP/wwdr.cer" -k "$keychain" || true
+          security set-key-partition-list -S apple-tool:,apple: -s -k "$password" "$keychain" > /dev/null
+          security list-keychains -d user -s "$keychain" login.keychain
+          security find-identity -v -p codesigning "$keychain"
+          security find-identity -v -p codesigning "$keychain" | grep -qF "\"$SIGNING_IDENTITY\"" || {
+            echo "::error::The certificate in MACOS_CERTIFICATE is not \"$SIGNING_IDENTITY\""
+            exit 1
+          }
+
+      - name: Create the draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          version="${GITHUB_REF_NAME#v}"
+          awk -v h="## $version" '$0 == h { on = 1; next } on && /^## / { exit } on' CHANGELOG.md > "$RUNNER_TEMP/notes.md"
+          if ! gh release view "$GITHUB_REF_NAME" > /dev/null 2>&1; then
+            gh release create "$GITHUB_REF_NAME" --draft --verify-tag \
+              --title "Kintsugi $version" --notes-file "$RUNNER_TEMP/notes.md"
+          fi
+
+      - name: Build, sign and upload
+        env:
+          GH_TOKEN: ${{ github.token }}
+          MYGO_UPDATER_PRIVATE_KEY: ${{ secrets.MYGO_UPDATER_PRIVATE_KEY }}
+        run: bun run build -- -platform darwin/universal -upload
+
+      - name: Check the signature
+        run: |
+          app="$(ls -d build/*/Kintsugi.app | head -1)"
+          codesign --verify --deep --strict "$app"
+          codesign -dvv "$app" 2>&1 | grep -F "Authority=$SIGNING_IDENTITY"
+
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release edit "$GITHUB_REF_NAME" --draft=false --latest

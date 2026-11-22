@@ -285,7 +285,7 @@ function labMarkdown(runs: LabRun[]): string {
 // ---- Settings ----
 
 async function settingsView(view: HTMLElement) {
-  const [hasKey, perm, login] = await Promise.all([Kintsugi.hasAPIKey(), Kintsugi.permission(), Kintsugi.openAtLogin()]);
+  const [hasKey, perm, login, ver] = await Promise.all([Kintsugi.hasAPIKey(), Kintsugi.permission(), Kintsugi.openAtLogin(), Kintsugi.version()]);
   const s = settings;
   const modes = Object.entries(s.appModes ?? {});
   view.innerHTML = `
@@ -325,6 +325,15 @@ async function settingsView(view: HTMLElement) {
         <tr><td><input id="new-mode-id" placeholder="bundle ID, e.g. com.googlecode.iterm2" /></td><td>${modeSelect("", "clipboard", "new-mode")}</td><td><button id="add-mode">Add</button></td></tr>
       </tbody></table>
     </section>
+    <section class="card form">
+      <h2>About</h2>
+      <p>Kintsugi ${esc(ver.version)}${ver.available ? ` · <span class="ok">${esc(ver.available)} is available</span>` : ""}</p>
+      ${
+        ver.canUpdate
+          ? `<div class="row"><button id="updates">Check for Updates…</button><span class="muted small">Kintsugi also checks GitHub Releases once a day.</span></div>`
+          : `<p class="muted small">This build doesn't update itself (development builds and builds without an update key).</p>`
+      }
+    </section>
     <div class="row"><button id="save" class="primary">Save settings</button><span id="save-out" class="small"></span></div>`;
 
   const val = (id: string) => $<HTMLInputElement>("#" + id).value;
@@ -342,6 +351,7 @@ async function settingsView(view: HTMLElement) {
     }
   };
   $("#save").onclick = save;
+  view.querySelector<HTMLElement>("#updates")?.addEventListener("click", () => void Kintsugi.checkForUpdates());
   $("#save-key").onclick = async () => {
     const k = val("key").trim();
     if (!k) return;

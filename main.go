@@ -16,6 +16,7 @@ import (
 	"path/filepath"
 
 	"github.com/egoist/mygo"
+	"github.com/egoist/mygo/plugins/updater"
 	"github.com/youngle316/kintsugi/internal/settings"
 	"github.com/youngle316/kintsugi/internal/store"
 	"github.com/youngle316/kintsugi/modules/capture"
@@ -30,6 +31,9 @@ func main() {
 	k := &Kintsugi{}
 	mygo.App.OnSecondInstance(func([]string, string) { go k.OpenWindow("") })
 	mygo.Bind(k)
+	// Checks GitHub Releases in the background and offers new versions;
+	// builds without updates (development, no public key) never check.
+	mygo.Use(updater.Plugin)
 
 	mygo.App.SetActivationPolicy(mygo.ActivationPolicyAccessory) // menu bar only, no Dock icon
 	mygo.App.OnWindowAllClosed(func() {})                        // keep running in the menu bar

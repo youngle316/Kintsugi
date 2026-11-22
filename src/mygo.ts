@@ -183,6 +183,14 @@ export interface Settings {
   onboarded: boolean;
 }
 
+/** VersionInfo is the running version and whether it can update itself. */
+export interface VersionInfo {
+  version: string;
+  canUpdate: boolean;
+  /** Available is a newer version a check found, "" when none. */
+  available: string;
+}
+
 // ---- Services ----
 
 /** Kintsugi is the app's backend, which the pages call. */
@@ -191,6 +199,8 @@ export const Kintsugi = {
   captureLog: bind<[], string[]>("Kintsugi.CaptureLog", () => []),
   /** Categories are the kinds of mistakes. */
   categories: bind<[], string[]>("Kintsugi.Categories", () => []),
+  /** CheckForUpdates shows the update window, which checks GitHub Releases. */
+  checkForUpdates: bind<[], void>("Kintsugi.CheckForUpdates", () => []),
   /** Copy puts the correction on the clipboard and hides the panel. */
   copy: bind<[number, string], void>("Kintsugi.Copy", (id: number, text: string) => [id, text]),
   /** Current returns what the panel shows, for a page that just loaded. */
@@ -245,6 +255,8 @@ export const Kintsugi = {
   settings: bind<[], Settings>("Kintsugi.Settings", () => []),
   /** TestModel checks a short sentence with the model, to try the key. */
   testModel: bind<[string], string>("Kintsugi.TestModel", (model: string) => [model]),
+  /** Version returns the running version. */
+  version: bind<[], VersionInfo>("Kintsugi.Version", () => []),
 } as const;
 
 // ---- Events ----

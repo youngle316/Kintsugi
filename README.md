@@ -4,6 +4,19 @@ macOS 菜单栏 app：在任何地方选中自己写的英文，按 `⌥⌘G` �
 
 当前状态：**第 0 步验证工具 + 阶段一（MVP）**。复习、趋势（阶段二）和主动提升（阶段三）还没做。
 
+## 安装
+
+从 [Releases](https://github.com/youngle316/Kintsugi/releases/latest) 下载 `kintsugi-<版本>.dmg`（Apple 芯片和 Intel 通用），把 Kintsugi 拖进“应用程序”。
+
+Kintsugi 用免费的 Apple Development 证书签名，没有公证，所以第一次打开时 macOS 会拦下（“无法验证开发者”）。处理一次即可：
+
+- 系统设置 ▸ 隐私与安全性，往下找到 Kintsugi 那条提示，点 **仍要打开**；或者
+- 终端里执行 `xattr -dr com.apple.quarantine /Applications/Kintsugi.app`，再打开。
+
+之后按首次启动的引导授权辅助功能，填写 SiliconFlow API Key。
+
+**更新**：Kintsugi 启动 10 秒后、之后每天检查一次 GitHub Releases，有新版本就弹窗显示更新说明，可以安装、稍后提醒或跳过。也可以随时用菜单栏 ▸ **Check for Updates…**，或 设置 ▸ About ▸ **Check for Updates…**。更新包用发布密钥签名，app 只接受签名正确的包；每个版本都用同一张证书签名，所以**更新后辅助功能授权不会丢**。
+
 ## 功能
 
 - **纠错浮窗**：`⌥⌘G` 读取前台 app 的选中文字（没选中就读当前输入框全文），浮窗显示修改后的全文、每处错误的高亮、类型、级别和中/英文解释。浮窗不抢前台，原 app 保持激活。
@@ -49,12 +62,56 @@ macOS 菜单栏 app：在任何地方选中自己写的英文，按 `⌥⌘G` �
 - `category` 归一到 14 个固定类型，`pattern` 归一（小写、合并空格、统一箭头为 ` -> `）后聚合。
 - 词数不计代码；错误率只算 `severity = error`。
 
+## 发布
+
+推送 `v*` tag 时，[`.github/workflows/release.yml`](.github/workflows/release.yml) 在 macOS runner 上构建通用版（`darwin/universal`），用证书签名，用更新私钥签更新包，上传 DMG、更新包和清单，然后**直接发布**（不留草稿），已安装的 app 随即能更新到它。
+
+### 一次性配置
+
+1. **更新密钥**（只在本机生成，私钥不进仓库）：
+
+   ```sh
+   go tool mygo keygen            # 打印 mygo-update.key 和 mygo-update.pub 的位置
+   ```
+
+   把 `mygo-update.pub` 的内容填进 `mygo.config.ts` 的 `UPDATE_PUBLIC_KEY`。私钥丢了，已安装的 app 就再也收不到更新，所以放进密码管理器备份。
+
+2. **签名身份**：用 youngle316@gmail.com 的 Personal Team 生成的 Apple Development 证书（Xcode ▸ Settings ▸ Accounts ▸ Manage Certificates）。**不要用 Bared Monkey Inc. 团队的证书**。用 `security find-identity -v -p codesigning` 找到完整名称，填进 `SIGNING_IDENTITY`，形如 `Apple Development: 名字 (XXXXXXXXXX)`。填了之后，本机 `bun run build` 也用它签名；`bun run dev` 会挑这个团队的开发证书签开发版。
+
+3. **仓库 secrets**（钥匙串访问 ▸ 我的证书，右键该证书 ▸ 导出，存成带密码的 `.p12`）：
+
+   ```sh
+   base64 -i certificate.p12 | gh secret set MACOS_CERTIFICATE -R youngle316/Kintsugi
+   gh secret set MACOS_CERTIFICATE_PASSWORD -R youngle316/Kintsugi          # .p12 的密码
+   gh secret set MYGO_UPDATER_PRIVATE_KEY -R youngle316/Kintsugi < path/to/mygo-update.key
+   ```
+
+4. 仓库要是**公开**的：app 从 `https://github.com/youngle316/Kintsugi/releases/latest/download/` 读更新清单，私有仓库读不到。
+
+在这两个值填好之前，构建是 ad hoc 签名、不带更新，工作流会在第一步报错退出。
+
+### 发一个版本
+
+1. 改 `package.json` 的 `version`（唯一的版本号来源，`mygo.config.ts` 读它）。
+2. 在 `CHANGELOG.md` 加 `## <版本>` 一节：它就是更新窗口和 GitHub release 的说明，缺了工作流会报错。
+3. 提交、推送，然后打 tag：
+
+   ```sh
+   git tag v0.2.0 && git push origin v0.2.0
+   ```
+
+工作流会检查 tag 和 `package.json` 版本一致、CHANGELOG 有这一节、两个值已填、导入的证书正好是 `SIGNING_IDENTITY`，最后验证 app 的签名。
+
+### 证书续期
+
+Apple Development 证书有效期一年。到期前在 Xcode 里重新生成一张（同一个 Personal Team，名称不变），导出新的 `.p12` 更新 `MACOS_CERTIFICATE` 和密码即可。名称不变时 macOS 通常会保留辅助功能授权；如果更新后提示没有权限，在辅助功能列表里删掉 Kintsugi 再加一次。
+
 ## 本机开发
 
-需要：macOS 13+、Xcode 26 或更新（Swift 6，`xcode-select -p` 能找到）、Go 1.27+、Bun。
+需要：macOS 13+、Xcode 26 或更新（Swift 6，`xcode-select -p` 能找到）、Go 1.27+、Bun **1.4.4 或更新**（`bun.lock` 是 1.4.4 写的；旧版 Bun 会报 `Unknown lockfile version`，用 `bun upgrade` 升级）。
 
 ```sh
-git clone https://github.com/youngle316/kintsugi && cd kintsugi
+git clone https://github.com/youngle316/Kintsugi && cd Kintsugi
 bun install
 bun run dev        # mygo dev：Vite + 构建 Swift 模块 + 运行 "Kintsugi Dev"，改代码自动重启
 ```
@@ -62,7 +119,8 @@ bun run dev        # mygo dev：Vite + 构建 Swift 模块 + 运行 "Kintsugi De
 打包：
 
 ```sh
-bun run build      # build/darwin-arm64/Kintsugi.app 和 .dmg
+bun run build                                   # build/darwin-arm64/Kintsugi.app 和 .dmg
+bun run build -- -platform darwin/universal     # 和发布一样的通用版
 ```
 
 测试：
@@ -85,11 +143,7 @@ macOS 按签名记住辅助功能授权和钥匙串的“始终允许”。ad ho
 
 之后 `bun run dev` 会**自动**用这个证书签开发版（启动时打印 `Signing the development app as Apple Development: …`；没找到会警告 “Signing the development app ad hoc”）。
 
-`bun run build` 默认 ad hoc，要用证书就：
-
-```sh
-KINTSUGI_SIGNING_IDENTITY="Apple Development: Your Name (XXXXXXXXXX)" bun run build
-```
+`bun run build` 用 `mygo.config.ts` 的 `SIGNING_IDENTITY` 签名（没填就 ad hoc）。临时换一个：`KINTSUGI_SIGNING_IDENTITY=- bun run build` 是 ad hoc。
 
 ### 授权辅助功能
 
@@ -99,11 +153,33 @@ KINTSUGI_SIGNING_IDENTITY="Apple Development: Your Name (XXXXXXXXXX)" bun run bu
 - 如果签名换过（比如从 ad hoc 改成证书），列表里旧的条目会失效：用 `-` 删掉旧条目再重新添加。
 - 用终端直接运行可执行文件（`go run`）时，权限算在终端头上，以 app 方式运行才算 Kintsugi 自己的。
 
+## 正式版和开发版
+
+| | 正式版 Kintsugi | 开发版 Kintsugi Dev（`bun run dev`） |
+|---|---|---|
+| Bundle ID | `com.youngle316.kintsugi` | `com.youngle316.kintsugi.dev` |
+| 数据目录 | `~/Library/Application Support/Kintsugi/` | `~/Library/Application Support/Kintsugi Dev/` |
+| API Key | 钥匙串，service `com.youngle316.kintsugi` | 钥匙串，service `com.youngle316.kintsugi.dev` |
+| 辅助功能授权 | 单独一条 | 单独一条 |
+
+两者完全分开：各自授权辅助功能、各自填 API Key，数据互不影响，可以同时装着。两个同时运行时快捷键会冲突（后启动的那个注册不上 `⌥⌘G`），测试时退出其中一个。
+
+**把开发版的数据带到正式版**：数据目录里是 `kintsugi.db`（错题和检测记录，SQLite，可能带 `-wal`、`-shm`）、`settings.json`（模型、语言、快捷键、按 app 的采集模式）和 `capture-lab.json`。先**退出两个 app**（菜单栏 ▸ Quit），然后：
+
+```sh
+src="$HOME/Library/Application Support/Kintsugi Dev"
+dst="$HOME/Library/Application Support/Kintsugi"
+mkdir -p "$dst"
+cp "$src"/kintsugi.db* "$src"/settings.json "$src"/capture-lab.json "$dst"/ 2>/dev/null
+```
+
+这会覆盖正式版已有的数据。API Key 在钥匙串里，不会跟着过去，在正式版里重新填一次。
+
 ## 第 0 步：采集可行性验证
 
 在你自己的 Mac 上，用真实的 Amp 和 Octarine 测试。工具是菜单栏 ▸ **Capture Lab (step 0)**，快捷键 `⌃⌥⌘L`。
 
-准备：`bun run dev`，按上一节授权 Kintsugi Dev，打开 Capture Lab 页。
+准备：装好正式版并授权（或用 `bun run dev` 运行开发版），打开 Capture Lab 页。结果在对应数据目录的 `capture-lab.json` 里。
 
 在下面每个地方各测一遍：
 
@@ -120,7 +196,7 @@ KINTSUGI_SIGNING_IDENTITY="Apple Development: Your Name (XXXXXXXXXX)" bun run bu
 4. 在 “What was this?” 选这是哪个场景。
 5. 再用主快捷键 `⌥⌘G` 实测一次完整流程：**选中一部分**、**什么都不选（光标在输入框里）** 各一次，看浮窗内容和“替换”结果是否正确，原文是否被正确替换（而不是追加）。
 
-全部测完点 **Copy results as Markdown**，把表格发回来。结果也保存在 `~/Library/Application Support/Kintsugi Dev/capture-lab.json`。
+全部测完点 **Copy results as Markdown**，把表格发回来。
 
 根据结果设置每个 app 的模式（设置 ▸ Per-app capture，填 bundle ID，Lab 卡片标题里有）：
 
@@ -158,10 +234,13 @@ internal/store           SQLite：submissions、issues、统计
 internal/settings        设置文件（API Key 不在这里）
 modules/capture          Swift Native Module（capture.go 是接口，swift/ 是实现，*_native.go 和 *.mygo.swift 是生成的）
 src/                     前端：app.ts 主窗口，panel.ts 浮窗，mygo.ts 是生成的客户端
+.github/workflows        release.yml：推 v* tag 构建、签名、发布
+CHANGELOG.md             每个版本的更新说明
 ```
 
 ## 已知限制
 
+- App 图标还是 MyGo 模板的默认图标（`resources/icon.png`，1024×1024 PNG），更新窗口里也显示它。
 - 浮窗位置优先用选区的屏幕坐标（`AXBoundsForRange`），拿不到就放在鼠标附近。
 - 复习队列、趋势、已掌握判定（阶段二）以及数据表 `review_cards`、`review_logs` 还没建。
 - 数据库没有迁移机制，阶段二加表时用 `CREATE TABLE IF NOT EXISTS` 即可。

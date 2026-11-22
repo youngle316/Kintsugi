@@ -16,6 +16,7 @@ import (
 
 	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/plugins/permissionflow"
+	"github.com/egoist/mygo/plugins/updater"
 	"github.com/youngle316/kintsugi/internal/llm"
 	"github.com/youngle316/kintsugi/internal/settings"
 	"github.com/youngle316/kintsugi/internal/store"
@@ -337,6 +338,22 @@ func (k *Kintsugi) OpenAtLogin() bool { return mygo.App.OpenAtLogin() }
 // SetOpenAtLogin starts Kintsugi at login, or stops.
 func (k *Kintsugi) SetOpenAtLogin(open bool) error { return mygo.App.SetOpenAtLogin(open) }
 
+// VersionInfo is the running version and whether it can update itself.
+type VersionInfo struct {
+	Version   string `json:"version"`
+	CanUpdate bool   `json:"canUpdate"`
+	// Available is a newer version a check found, "" when none.
+	Available string `json:"available"`
+}
+
+// Version returns the running version.
+func (k *Kintsugi) Version() VersionInfo {
+	return VersionInfo{Version: mygo.App.Version(), CanUpdate: mygo.Updater.Enabled(), Available: updater.AvailableVersion()}
+}
+
+// CheckForUpdates shows the update window, which checks GitHub Releases.
+func (k *Kintsugi) CheckForUpdates() { updater.CheckForUpdates() }
+
 // FinishOnboarding records that the first-run guide is done.
 func (k *Kintsugi) FinishOnboarding() error {
 	s := k.settings.Get()
@@ -437,6 +454,7 @@ func (k *Kintsugi) makeTray() {
 			{Label: "Mistakes", Click: func(*mygo.MenuItem, *mygo.Window) { go k.OpenWindow("mistakes") }},
 			{Label: "Capture Lab (step 0)", Click: func(*mygo.MenuItem, *mygo.Window) { go k.OpenWindow("lab") }},
 			{Label: "Settings…", Accelerator: "Cmd+,", Click: func(*mygo.MenuItem, *mygo.Window) { go k.OpenWindow("settings") }},
+			updater.MenuItem(),
 			mygo.Separator(),
 			{Role: mygo.RoleQuit},
 		}),
