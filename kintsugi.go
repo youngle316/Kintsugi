@@ -5,7 +5,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"image"
 	"image/color"
 	"image/png"
 	"log"
@@ -451,26 +450,11 @@ func (k *Kintsugi) makeTray() {
 	k.tray = t
 }
 
-// trayIcon draws a 32×32 template image: a bowl with a crack through it.
+// trayIcon draws the mark as a 32×32 template image: the bowl, its crack
+// left empty, since macOS tints the menu bar's icons one color.
 func trayIcon() []byte {
-	img := image.NewNRGBA(image.Rect(0, 0, 32, 32))
-	for y := range 32 {
-		for x := range 32 {
-			dx, dy := float64(x)-15.5, float64(y)-10
-			inBowl := y >= 12 && y <= 26 && dx*dx/(13.5*13.5)+dy*dy/(16*16) <= 1
-			rim := y >= 10 && y < 12 && x >= 2 && x <= 29
-			if !(inBowl || rim) {
-				continue
-			}
-			// The crack: a zigzag, left transparent.
-			cx := 14 + map[bool]int{true: 3, false: 0}[(y/4)%2 == 0]
-			if x == cx || x == cx+1 {
-				continue
-			}
-			img.Set(x, y, color.Black)
-		}
-	}
+	bowl := ui.MustParseSVG([]byte(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 1.6 24 24"><path d="` + markBowl + `"/></svg>`))
 	var b bytes.Buffer
-	_ = png.Encode(&b, img)
+	_ = png.Encode(&b, bowl.Image(32, 32, color.Black))
 	return b.Bytes()
 }

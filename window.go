@@ -195,7 +195,7 @@ func (k *Kintsugi) sidebar(c *ui.Context, tk *theme.Tokens) {
 	ui.Column(c).Width(208).Shrink(0).Padding(0, 8, 12, 12).Gap(2).Children(func() {
 		ui.Box(c).Height(top).Shrink(0).Margin(0, -8, 0, -12).DragWindow() // the title bar
 		ui.Row(c).Gap(10).AlignItems(ui.Center).Padding(0, 8, 16, 8).Children(func() {
-			ui.Icon(c, logo).FontSize(20).TextColor(tk.Gold)
+			ui.Image(c, logo).Width(22).Height(22).TextColor(tk.Text)
 			ui.Text(c, "Kintsugi").FontSize(16).FontWeight(600).TextColor(tk.Text)
 		})
 		for _, p := range navPages {
@@ -706,7 +706,7 @@ func (k *Kintsugi) welcomePage(c *ui.Context, tk *theme.Tokens) {
 	v := &k.view
 	ui.Column(c).Gap(6).Padding(12, 0, 4, 0).Children(func() {
 		ui.Row(c).Gap(12).AlignItems(ui.Center).Children(func() {
-			ui.Icon(c, logo).FontSize(28).TextColor(tk.Gold)
+			ui.Image(c, logo).Width(30).Height(30).TextColor(tk.Text)
 			display.Text(c, "Welcome to Kintsugi", display.TextProps{Heading: 2})
 		})
 		display.Text(c, "Mistakes aren't erased: they're kept, and mended with gold.", display.TextProps{Type: display.TextSecondary})
@@ -875,5 +875,13 @@ func prettyAccel(accel string) string {
 	return out + strings.ToUpper(parts[len(parts)-1])
 }
 
-// logo is a bowl mended along a crack, as the menu bar icon.
-var logo = ui.MustParseSVG([]byte(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9h18"/><path d="M4 9a8 8 0 0 0 16 0"/><path d="M12 9l-1.5 3 2 2.5-1 3.5"/></svg>`))
+// The mark, as resources/icon.svg draws it: a bowl broken in two along a
+// crack, mended with gold, in a grid of 24, centered at 12, 13.6.
+const (
+	markBowl = "M1.37 6.25L1.27 6.28L1.15 6.35L1.09 6.44L1.05 6.57L1.05 8.60L1.08 8.73L1.18 8.87L1.33 8.94L2.05 8.95L2.15 9.67L2.30 10.32L2.49 10.97L2.73 11.60L3.01 12.21L3.34 12.80L3.71 13.37L4.34 14.17L5.05 14.91L5.84 15.56L6.70 16.14L7.31 16.48L8.25 16.90L9.24 17.23L10.26 17.45L11.19 17.57L12.62 14.17L9.83 11.28L12.55 7.37L12.55 6.25ZM12.82 17.57L14.08 17.39L14.76 17.23L15.75 16.90L16.69 16.48L17.59 15.96L18.16 15.56L18.95 14.91L19.66 14.17L20.29 13.37L20.66 12.80L20.99 12.21L21.27 11.60L21.51 10.97L21.70 10.32L21.85 9.67L21.95 8.95L22.67 8.94L22.82 8.87L22.92 8.73L22.95 8.60L22.95 6.60L22.91 6.44L22.82 6.33L22.73 6.28L22.60 6.25L14.05 6.25L14.05 7.83L11.77 11.12L14.38 13.83ZM8.94 20.74L9.03 20.85L9.20 20.90L14.89 20.89L15.01 20.81L15.09 20.69L15.69 18.69L15.69 18.51L15.57 18.35L15.40 18.30L12.51 18.30L12.39 18.59L11.70 18.30L8.51 18.31L8.35 18.43L8.31 18.54L8.31 18.66Z"
+	markSeam = "M11.30 17.58L11.65 17.59L12.00 17.60L12.35 17.59L12.70 17.58L12.82 17.57L14.38 13.83L11.77 11.12L14.05 7.83L14.05 6.25L12.55 6.25L12.55 7.37L9.83 11.28L12.62 14.17L11.19 17.57ZM11.70 18.30L12.39 18.59L12.51 18.30Z"
+)
+
+// logo is the mark in the windows: the bowl in the color of the text, the
+// seam in gold. Show it with ui.Image, which keeps the gold.
+var logo = ui.MustParseSVG([]byte(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 1.6 24 24"><path fill="currentColor" d="` + markBowl + `"/><path fill="#E3A93F" d="` + markSeam + `"/></svg>`))

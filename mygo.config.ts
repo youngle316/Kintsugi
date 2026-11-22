@@ -21,6 +21,8 @@ export default defineConfig({
   // The version is package.json's; the release workflow checks the tag.
   version: pkg.version,
   out: "build",
+  // The source of resources/icon.png, which the app does not need.
+  resourcesExclude: ["icon.svg"],
   ...(UPDATE_PUBLIC_KEY && {
     updates: { publicKey: UPDATE_PUBLIC_KEY, github: "youngle316/Kintsugi" },
   }),

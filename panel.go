@@ -46,7 +46,7 @@ func (k *Kintsugi) panelView(c *ui.Context) {
 	}
 	page.Children(func() {
 		ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
-			ui.Icon(c, logo).FontSize(16).TextColor(tk.Gold)
+			ui.Image(c, logo).Width(18).Height(18).TextColor(tk.Text)
 			ui.Text(c, "Kintsugi").FontWeight(600).TextColor(tk.Text)
 			ui.Spacer(c)
 			if done && len(ch.Result.Issues) > 0 {
