@@ -26,8 +26,6 @@ var schema = []string{
 	`CREATE TABLE IF NOT EXISTS submissions (
 		id INTEGER PRIMARY KEY,
 		created_at INTEGER NOT NULL,
-		source_app TEXT NOT NULL DEFAULT '',
-		source_app_name TEXT NOT NULL DEFAULT '',
 		capture_method TEXT NOT NULL DEFAULT '',
 		original_text TEXT NOT NULL,
 		corrected_text TEXT NOT NULL,
@@ -74,8 +72,6 @@ func (s *Store) Close() error { return s.db.Close() }
 // Submission is a check to save.
 type Submission struct {
 	CreatedAt     time.Time
-	SourceApp     string // bundle ID
-	SourceAppName string
 	CaptureMethod string
 	OriginalText  string
 	Action        string
@@ -88,9 +84,9 @@ func (s *Store) Save(ctx context.Context, sub Submission) (int64, error) {
 		sub.Action = ActionIgnored
 	}
 	stmts := []sqlite.Statement{{
-		SQL: `INSERT INTO submissions (created_at, source_app, source_app_name, capture_method, original_text,
-			corrected_text, word_count, action, model) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-		Args: []any{sub.CreatedAt.UnixMilli(), sub.SourceApp, sub.SourceAppName, sub.CaptureMethod, sub.OriginalText,
+		SQL: `INSERT INTO submissions (created_at, capture_method, original_text,
+			corrected_text, word_count, action, model) VALUES (?, ?, ?, ?, ?, ?, ?)`,
+		Args: []any{sub.CreatedAt.UnixMilli(), sub.CaptureMethod, sub.OriginalText,
 			sub.Result.CorrectedText, sub.Result.WordCount, sub.Action, sub.Result.Model},
 	}}
 	for _, is := range sub.Result.Issues {
@@ -120,8 +116,6 @@ type IssueRow struct {
 	ID            int64  `json:"id"`
 	SubmissionID  int64  `json:"submissionId"`
 	CreatedAt     int64  `json:"createdAt"` // Unix milliseconds
-	SourceApp     string `json:"sourceApp"`
-	SourceAppName string `json:"sourceAppName"`
 	Original      string `json:"original"`
 	Corrected     string `json:"corrected"`
 	Category      string `json:"category"`
@@ -134,14 +128,13 @@ type IssueRow struct {
 
 // Filter selects issues; empty fields select all.
 type Filter struct {
-	Category  string `json:"category"`
-	Severity  string `json:"severity"`
-	SourceApp string `json:"sourceApp"`
-	Since     int64  `json:"since"` // Unix milliseconds
-	Until     int64  `json:"until"`
-	Pattern   string `json:"pattern"`
-	Limit     int    `json:"limit"`
-	Offset    int    `json:"offset"`
+	Category string `json:"category"`
+	Severity string `json:"severity"`
+	Since    int64  `json:"since"` // Unix milliseconds
+	Until    int64  `json:"until"`
+	Pattern  string `json:"pattern"`
+	Limit    int    `json:"limit"`
+	Offset   int    `json:"offset"`
 }
 
 // Issues lists the issues f selects, newest first.
@@ -150,7 +143,7 @@ func (s *Store) Issues(ctx context.Context, f Filter) ([]IssueRow, error) {
 	if f.Limit <= 0 || f.Limit > 500 {
 		f.Limit = 200
 	}
-	rows, err := s.db.Query(ctx, `SELECT i.id, i.submission_id, s.created_at, s.source_app, s.source_app_name,
+	rows, err := s.db.Query(ctx, `SELECT i.id, i.submission_id, s.created_at,
 		i.span_original, i.span_corrected, i.category, i.pattern, i.severity, i.explanation_zh, i.explanation_en, i.sentence
 		FROM issues i JOIN submissions s ON s.id = i.submission_id`+where+
 		` ORDER BY s.created_at DESC, i.id LIMIT ? OFFSET ?`, append(args, f.Limit, f.Offset)...)
@@ -160,9 +153,9 @@ func (s *Store) Issues(ctx context.Context, f Filter) ([]IssueRow, error) {
 	out := make([]IssueRow, 0, len(rows.Values))
 	for _, v := range rows.Values {
 		out = append(out, IssueRow{
-			ID: i64(v[0]), SubmissionID: i64(v[1]), CreatedAt: i64(v[2]), SourceApp: str(v[3]), SourceAppName: str(v[4]),
-			Original: str(v[5]), Corrected: str(v[6]), Category: str(v[7]), Pattern: str(v[8]), Severity: str(v[9]),
-			ExplanationZh: str(v[10]), ExplanationEn: str(v[11]), Sentence: str(v[12]),
+			ID: i64(v[0]), SubmissionID: i64(v[1]), CreatedAt: i64(v[2]),
+			Original: str(v[3]), Corrected: str(v[4]), Category: str(v[5]), Pattern: str(v[6]), Severity: str(v[7]),
+			ExplanationZh: str(v[8]), ExplanationEn: str(v[9]), Sentence: str(v[10]),
 		})
 	}
 	return out, nil
@@ -177,9 +170,6 @@ func (f Filter) where() (string, []any) {
 	}
 	if f.Severity != "" {
 		add("i.severity = ?", f.Severity)
-	}
-	if f.SourceApp != "" {
-		add("s.source_app = ?", f.SourceApp)
 	}
 	if f.Pattern != "" {
 		add("i.pattern = ?", f.Pattern)
@@ -213,7 +203,6 @@ type Overview struct {
 	ErrorsPer100   float64 `json:"errorsPer100"` // errors per hundred words
 	Categories     []Count `json:"categories"`
 	TopPatterns    []Count `json:"topPatterns"`
-	SourceApps     []Count `json:"sourceApps"`
 	SinceMillis    int64   `json:"since"`
 	PatternsWindow int     `json:"patternsWindowDays"`
 }
@@ -259,10 +248,6 @@ func (s *Store) Overview(ctx context.Context, since time.Time) (Overview, error)
 	monthAgo := time.Now().AddDate(0, 0, -30).UnixMilli()
 	if o.TopPatterns, err = s.counts(ctx, `SELECT i.pattern, MIN(i.category), COUNT(*) FROM issues i JOIN submissions s ON s.id = i.submission_id
 		WHERE s.created_at >= ? GROUP BY i.pattern ORDER BY 3 DESC, MAX(s.created_at) DESC LIMIT 10`, monthAgo); err != nil {
-		return o, err
-	}
-	if o.SourceApps, err = s.counts(ctx, `SELECT source_app, MAX(source_app_name), COUNT(*) FROM submissions
-		WHERE created_at >= ? GROUP BY source_app ORDER BY 3 DESC`, from); err != nil {
 		return o, err
 	}
 	return o, nil

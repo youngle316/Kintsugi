@@ -25,11 +25,6 @@ final class SystemCapture: Capture {
 
     func isTrusted() -> Bool { AXIsProcessTrusted() }
 
-    func frontmostApp() throws -> AppInfo {
-        guard let app = NSWorkspace.shared.frontmostApplication else { throw CaptureError.noTarget }
-        return AppInfo(app)
-    }
-
     func getSelectedText(opts: ReadOptions) throws -> Selection {
         guard AXIsProcessTrusted() else { throw CaptureError.notTrusted }
         guard let app = NSWorkspace.shared.frontmostApplication else { throw CaptureError.noTarget }

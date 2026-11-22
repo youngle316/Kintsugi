@@ -50,8 +50,6 @@ type Check struct {
 	Original     string      `json:"original"`
 	Result       *llm.Result `json:"result"`
 	Error        string      `json:"error,omitempty"`
-	SourceApp    string      `json:"sourceApp"`
-	SourceName   string      `json:"sourceName"`
 	Method       string      `json:"method"`
 	WholeField   bool        `json:"wholeField"`
 	Language     string      `json:"language"`
@@ -85,7 +83,7 @@ func (k *Kintsugi) checkSelection() {
 
 	s := k.settings.Get()
 	c := &Check{State: "loading", Language: string(s.Language)}
-	text, caret, err := k.read(s, c)
+	text, caret, err := k.read(c)
 	if err != nil {
 		c.State, c.Error = "error", err.Error()
 		k.showPanel(c, caret)
@@ -107,8 +105,7 @@ func (k *Kintsugi) checkSelection() {
 	// Saved now, as ignored, so that closing the panel any way still
 	// records the check; the action updates it.
 	id, err := k.db.Save(ctx, store.Submission{
-		CreatedAt: time.Now(), SourceApp: c.SourceApp, SourceAppName: c.SourceName,
-		CaptureMethod: c.Method, OriginalText: text, Action: store.ActionIgnored, Result: res,
+		CreatedAt: time.Now(), CaptureMethod: c.Method, OriginalText: text, Action: store.ActionIgnored, Result: res,
 	})
 	if err != nil {
 		log.Println("saving the check:", err)
@@ -118,20 +115,14 @@ func (k *Kintsugi) checkSelection() {
 	_ = DataChanged.Broadcast(id)
 }
 
-// read gets the text to check: from the native module as the app's mode
-// allows, else what the user copied.
-func (k *Kintsugi) read(s settings.Settings, c *Check) (string, *capture.Rect, error) {
-	mode := settings.ModeManual
-	if k.capture != nil {
-		if app, err := k.capture.FrontmostApp(); err == nil {
-			c.SourceApp, c.SourceName = app.BundleID, app.Name
-			mode = s.ModeFor(app.BundleID)
-		}
-		if mode != settings.ModeManual && !k.capture.IsTrusted() {
-			return "", nil, errors.New("Kintsugi needs the Accessibility permission to read the selection. Open Kintsugi ▸ Settings to grant it, or copy the text (⌘C) and press the shortcut again with this app set to manual mode")
-		}
+// read gets the text to check: the selection of the app in front, read
+// the same way in every app, else, without the native module, what the
+// user copied.
+func (k *Kintsugi) read(c *Check) (string, *capture.Rect, error) {
+	if k.capture != nil && !k.capture.IsTrusted() {
+		return "", nil, errors.New("Kintsugi needs the Accessibility permission to read the selection. Open Kintsugi ▸ Settings to grant it")
 	}
-	if mode == settings.ModeManual {
+	if k.capture == nil {
 		c.Method, c.ManualMode = "manual_clipboard", true
 		text := mygo.Clipboard.ReadText()
 		if strings.TrimSpace(text) == "" {
@@ -140,7 +131,7 @@ func (k *Kintsugi) read(s settings.Settings, c *Check) (string, *capture.Rect, e
 		return text, nil, nil
 	}
 	sel, err := k.capture.GetSelectedText(capture.ReadOptions{
-		AX: mode == settings.ModeAuto, Clipboard: true, WholeField: true,
+		AX: true, Clipboard: true, WholeField: true,
 	})
 	k.mu.Lock()
 	k.lastLog = sel.Log
@@ -181,7 +172,8 @@ func (k *Kintsugi) Current() *Check {
 }
 
 // Replace writes the correction back where it was read, then hides the
-// panel. In manual mode it puts the correction on the clipboard instead.
+// panel. Without the native module it puts the correction on the
+// clipboard instead.
 func (k *Kintsugi) Replace(id int64, text string) (string, error) {
 	k.hidePanel()
 	c := k.Current()
@@ -190,8 +182,7 @@ func (k *Kintsugi) Replace(id int64, text string) (string, error) {
 		k.setAction(id, store.ActionCopied)
 		return "copied", nil
 	}
-	mode := k.settings.Get().ModeFor(c.SourceApp)
-	res, err := k.capture.ReplaceSelection(text, capture.WriteOptions{AX: mode == settings.ModeAuto, Paste: true})
+	res, err := k.capture.ReplaceSelection(text, capture.WriteOptions{AX: true, Paste: true})
 	k.mu.Lock()
 	k.lastLog = append(k.lastLog, res.Log...)
 	k.mu.Unlock()

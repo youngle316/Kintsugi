@@ -4,9 +4,6 @@ import { bind, event } from "mygo-runtime";
 
 // ---- Types ----
 
-/** CaptureMode says how Kintsugi reads text from an app. */
-export type CaptureMode = "auto" | "clipboard" | "manual";
-
 /** Check is a correction the panel shows. */
 export interface Check {
   /** State is "loading", "done" or "error". */
@@ -15,8 +12,6 @@ export interface Check {
   original: string;
   result: Result | null;
   error?: string;
-  sourceApp: string;
-  sourceName: string;
   method: string;
   wholeField: boolean;
   language: string;
@@ -36,7 +31,6 @@ export interface Count {
 export interface Filter {
   category: string;
   severity: string;
-  sourceApp: string;
   /** Unix milliseconds */
   since: number;
   until: number;
@@ -64,8 +58,6 @@ export interface IssueRow {
   submissionId: number;
   /** Unix milliseconds */
   createdAt: number;
-  sourceApp: string;
-  sourceAppName: string;
   original: string;
   corrected: string;
   category: string;
@@ -90,7 +82,6 @@ export interface Overview {
   errorsPer100: number;
   categories: Count[];
   topPatterns: Count[];
-  sourceApps: Count[];
   since: number;
   patternsWindowDays: number;
 }
@@ -118,11 +109,6 @@ export interface Settings {
   qualityModel: string;
   language: Language;
   shortcut: string;
-  /**
-   * AppModes overrides the capture mode by bundle ID, for apps where
-   * step 0 found that automatic capture fails.
-   */
-  appModes: Record<string, CaptureMode>;
   /** Onboarded is set once the first-run guide was finished or skipped. */
   onboarded: boolean;
 }
@@ -172,7 +158,8 @@ export const Kintsugi = {
   permission: bind<[], PermissionState>("Kintsugi.Permission", () => []),
   /**
    * Replace writes the correction back where it was read, then hides the
-   * panel. In manual mode it puts the correction on the clipboard instead.
+   * panel. Without the native module it puts the correction on the
+   * clipboard instead.
    */
   replace: bind<[number, string], string>("Kintsugi.Replace", (id: number, text: string) => [id, text]),
   /** SaveSettings saves the settings and registers the shortcut they name. */

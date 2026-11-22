@@ -21,7 +21,7 @@ func TestSaveAndCount(t *testing.T) {
 	issue := func(pattern, cat, sev string) llm.Issue {
 		return llm.Issue{Original: "a", Corrected: "b", Category: cat, Pattern: pattern, Severity: sev}
 	}
-	first, err := s.Save(ctx, Submission{CreatedAt: now, SourceApp: "com.amp", SourceAppName: "Amp", OriginalText: "x",
+	first, err := s.Save(ctx, Submission{CreatedAt: now, OriginalText: "x",
 		Result: llm.Result{WordCount: 40, Issues: []llm.Issue{
 			issue("discuss about -> discuss", "preposition_collocation", "error"),
 			issue("missing article", "article", "error"),
@@ -29,7 +29,7 @@ func TestSaveAndCount(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	second, err := s.Save(ctx, Submission{CreatedAt: now.Add(time.Second), SourceApp: "md.obsidian", OriginalText: "y",
+	second, err := s.Save(ctx, Submission{CreatedAt: now.Add(time.Second), OriginalText: "y",
 		Result: llm.Result{WordCount: 60, Issues: []llm.Issue{
 			issue("discuss about -> discuss", "preposition_collocation", "error"),
 			issue("in order to -> to", "wordiness", "suggestion"),
@@ -48,7 +48,7 @@ func TestSaveAndCount(t *testing.T) {
 	}
 
 	// Each issue belongs to its own submission.
-	rows, err := s.Issues(ctx, Filter{SourceApp: "md.obsidian"})
+	rows, err := s.Issues(ctx, Filter{Since: now.Add(time.Second).UnixMilli()})
 	if err != nil {
 		t.Fatal(err)
 	}

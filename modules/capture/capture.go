@@ -1,10 +1,10 @@
 // Package capture reads the text the user selected in another app, writes
-// text back in its place, and tells which app is in front. It is a native
+// text back in its place. It is a native
 // module implemented in Swift (swift/), with macOS's accessibility API and,
 // where that reads nothing, a simulated ⌘C or ⌘V through the clipboard,
 // which it restores afterwards.
 //
-// Everything but FrontmostApp needs the Accessibility permission: the
+// Reading and writing need the Accessibility permission: the
 // accessibility API reads other apps only for trusted apps, and macOS
 // drops the key presses of untrusted ones.
 package capture
@@ -108,8 +108,6 @@ var (
 type Capture interface {
 	// IsTrusted reports whether the app has the Accessibility permission.
 	IsTrusted() bool
-	// FrontmostApp returns the app in front, which has the keyboard.
-	FrontmostApp() (AppInfo, error)
 	// GetSelectedText reads the selected text of the app in front: with the
 	// accessibility API, then with a simulated ⌘C, as opts allow. Read
 	// through the clipboard, it restores what the clipboard held before.

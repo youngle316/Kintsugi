@@ -14,20 +14,6 @@ import (
 	"github.com/youngle316/kintsugi/internal/llm"
 )
 
-// CaptureMode says how Kintsugi reads text from an app.
-type CaptureMode string
-
-const (
-	// ModeAuto reads with the accessibility API, then a simulated ⌘C, and
-	// writes back with the accessibility API, then a simulated ⌘V.
-	ModeAuto CaptureMode = "auto"
-	// ModeClipboard skips the accessibility API: simulated ⌘C and ⌘V only.
-	ModeClipboard CaptureMode = "clipboard"
-	// ModeManual reads what the user copied themselves, and puts the
-	// correction on the clipboard instead of writing it back.
-	ModeManual CaptureMode = "manual"
-)
-
 // Language is the language of explanations.
 type Language string
 
@@ -43,9 +29,6 @@ type Settings struct {
 	QualityModel string   `json:"qualityModel"`
 	Language     Language `json:"language"`
 	Shortcut     string   `json:"shortcut"`
-	// AppModes overrides the capture mode by bundle ID, for apps where
-	// step 0 found that automatic capture fails.
-	AppModes map[string]CaptureMode `json:"appModes"`
 	// Onboarded is set once the first-run guide was finished or skipped.
 	Onboarded bool `json:"onboarded"`
 }
@@ -58,16 +41,7 @@ func Defaults() Settings {
 		QualityModel: "deepseek-ai/DeepSeek-V4-Pro",
 		Language:     LanguageZh,
 		Shortcut:     "Alt+Cmd+G",
-		AppModes:     map[string]CaptureMode{},
 	}
-}
-
-// ModeFor returns the capture mode of an app.
-func (s Settings) ModeFor(bundleID string) CaptureMode {
-	if m, ok := s.AppModes[bundleID]; ok {
-		return m
-	}
-	return ModeAuto
 }
 
 // Validate checks and tidies the settings.
@@ -89,11 +63,6 @@ func (s *Settings) Validate() error {
 	}
 	if s.Language != LanguageEn {
 		s.Language = LanguageZh
-	}
-	for id, m := range s.AppModes {
-		if m != ModeClipboard && m != ModeManual {
-			delete(s.AppModes, id) // auto is the default: not kept
-		}
 	}
 	return nil
 }
@@ -118,9 +87,6 @@ func Load(path string) (*File, error) {
 	if err := json.Unmarshal(data, &f.cur); err != nil {
 		return nil, fmt.Errorf("reading %s: %w", path, err)
 	}
-	if f.cur.AppModes == nil {
-		f.cur.AppModes = map[string]CaptureMode{}
-	}
 	return f, nil
 }
 
@@ -128,19 +94,11 @@ func Load(path string) (*File, error) {
 func (f *File) Get() Settings {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	s := f.cur
-	s.AppModes = make(map[string]CaptureMode, len(f.cur.AppModes))
-	for k, v := range f.cur.AppModes {
-		s.AppModes[k] = v
-	}
-	return s
+	return f.cur
 }
 
 // Set validates and saves the settings.
 func (f *File) Set(s Settings) (Settings, error) {
-	if s.AppModes == nil {
-		s.AppModes = map[string]CaptureMode{}
-	}
 	if err := s.Validate(); err != nil {
 		return s, err
 	}

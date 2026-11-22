@@ -1,7 +1,7 @@
 // The main window: overview (statistics), mistakes, settings, and the
 // first-run guide.
 import { Chart, ArcElement, BarController, BarElement, CategoryScale, DoughnutController, Legend, LinearScale, Tooltip } from "chart.js";
-import { Kintsugi, events, type CaptureMode, type Filter, type Settings } from "./mygo";
+import { Kintsugi, events, type Filter, type Settings } from "./mygo";
 import { $, categoryLabel, esc, errorText, formatTime } from "./util";
 
 Chart.register(ArcElement, BarController, BarElement, CategoryScale, DoughnutController, Legend, LinearScale, Tooltip);
@@ -96,8 +96,7 @@ async function overview(view: HTMLElement) {
               <ol class="top">${o.topPatterns
                 .map((p) => `<li><div><a href="#" data-pattern="${esc(p.key)}">${esc(p.key)}</a><div class="muted small">${esc(categoryLabel(p.label ?? "", lang))}</div></div><b>${p.count}</b></li>`)
                 .join("") || `<li class="muted">None yet</li>`}</ol></section>
-          </div>
-          <section class="card"><h2>By app</h2>${o.sourceApps.map((a) => `<span class="chip">${esc(a.label || a.key || "Clipboard")} · ${a.count}</span>`).join(" ")}</section>`
+          </div>`
     }`;
   $<HTMLSelectElement>("#days").onchange = (e) => {
     sessionStorage.setItem("days", (e.target as HTMLSelectElement).value);
@@ -129,8 +128,8 @@ async function overview(view: HTMLElement) {
 // ---- Mistakes ----
 
 async function mistakes(view: HTMLElement) {
-  const f: Filter = { category: "", severity: "", sourceApp: "", since: 0, until: 0, pattern: "", limit: 200, offset: 0, ...JSON.parse(sessionStorage.getItem("filter") ?? "{}") };
-  const [rows, cats, o] = await Promise.all([Kintsugi.issues(f), Kintsugi.categories(), Kintsugi.overview(0)]);
+  const f: Filter = { category: "", severity: "", since: 0, until: 0, pattern: "", limit: 200, offset: 0, ...JSON.parse(sessionStorage.getItem("filter") ?? "{}") };
+  const [rows, cats] = await Promise.all([Kintsugi.issues(f), Kintsugi.categories()]);
   const lang = settings.language;
   const sinceDays = f.since ? Math.round((Date.now() - f.since) / 86400000) : 0;
   view.innerHTML = `
@@ -138,11 +137,10 @@ async function mistakes(view: HTMLElement) {
     <div class="filters">
       <select id="f-category"><option value="">All types</option>${cats.map((c) => `<option value="${c}" ${c === f.category ? "selected" : ""}>${esc(categoryLabel(c, lang))}</option>`).join("")}</select>
       <select id="f-severity"><option value="">Errors & suggestions</option><option value="error" ${f.severity === "error" ? "selected" : ""}>Errors</option><option value="suggestion" ${f.severity === "suggestion" ? "selected" : ""}>Suggestions</option></select>
-      <select id="f-app"><option value="">All apps</option>${o.sourceApps.map((a) => `<option value="${esc(a.key)}" ${a.key === f.sourceApp ? "selected" : ""}>${esc(a.label || a.key || "Clipboard")}</option>`).join("")}</select>
       <select id="f-since">${[0, 1, 7, 30, 90].map((d) => `<option value="${d}" ${d === sinceDays ? "selected" : ""}>${d ? `Last ${d} day${d > 1 ? "s" : ""}` : "Any time"}</option>`).join("")}</select>
       ${f.pattern ? `<span class="chip">pattern: ${esc(f.pattern)} <a href="#" id="f-clear-pattern">×</a></span>` : ""}
     </div>
-    <table class="list"><thead><tr><th>When</th><th>Mistake</th><th>Type</th><th>Why</th><th>App</th></tr></thead><tbody>
+    <table class="list"><thead><tr><th>When</th><th>Mistake</th><th>Type</th><th>Why</th></tr></thead><tbody>
     ${
       rows
         .map(
@@ -153,10 +151,9 @@ async function mistakes(view: HTMLElement) {
         <td><span class="badge ${r.severity}">${r.severity === "error" ? "Error" : "Suggestion"}</span><div class="small">${esc(categoryLabel(r.category, lang))}</div>
           <div class="small muted">${esc(r.pattern)}</div></td>
         <td class="small">${esc((lang === "en" ? r.explanationEn : r.explanationZh) || r.explanationEn || r.explanationZh)}</td>
-        <td class="small muted">${esc(r.sourceAppName || r.sourceApp || "Clipboard")}</td>
       </tr>`,
         )
-        .join("") || `<tr><td colspan="5" class="muted">No mistakes match.</td></tr>`
+        .join("") || `<tr><td colspan="4" class="muted">No mistakes match.</td></tr>`
     }</tbody></table>`;
   const save = (patch: Partial<Filter>) => {
     sessionStorage.setItem("filter", JSON.stringify({ ...f, ...patch }));
@@ -164,7 +161,6 @@ async function mistakes(view: HTMLElement) {
   };
   $<HTMLSelectElement>("#f-category").onchange = (e) => save({ category: (e.target as HTMLSelectElement).value });
   $<HTMLSelectElement>("#f-severity").onchange = (e) => save({ severity: (e.target as HTMLSelectElement).value });
-  $<HTMLSelectElement>("#f-app").onchange = (e) => save({ sourceApp: (e.target as HTMLSelectElement).value });
   $<HTMLSelectElement>("#f-since").onchange = (e) => {
     const d = Number((e.target as HTMLSelectElement).value);
     save({ since: d ? Date.now() - d * 86400000 : 0 });
@@ -178,7 +174,6 @@ async function mistakes(view: HTMLElement) {
 async function settingsView(view: HTMLElement) {
   const [hasKey, perm, login, ver] = await Promise.all([Kintsugi.hasAPIKey(), Kintsugi.permission(), Kintsugi.openAtLogin(), Kintsugi.version()]);
   const s = settings;
-  const modes = Object.entries(s.appModes ?? {});
   view.innerHTML = `
     <div class="head"><h1>Settings</h1></div>
     <section class="card form">
@@ -208,13 +203,6 @@ async function settingsView(view: HTMLElement) {
             ? `<p class="ok">✓ Kintsugi may read and write the selection of other apps.</p>`
             : `<p>Kintsugi needs the Accessibility permission to read the selection and write corrections back.</p><button id="grant" class="primary">Grant Accessibility…</button>`
       }
-      <h3>Per-app capture</h3>
-      <p class="muted small">Auto: accessibility API, then ⌘C/⌘V. Clipboard: ⌘C/⌘V only. Manual: you copy, Kintsugi reads the clipboard and puts the correction back on it.</p>
-      <table class="modes"><tbody>${modes
-        .map(([id, m]) => `<tr><td>${esc(id)}</td><td>${modeSelect(id, m)}</td><td><a href="#" data-del-mode="${esc(id)}">remove</a></td></tr>`)
-        .join("")}
-        <tr><td><input id="new-mode-id" placeholder="bundle ID, e.g. com.googlecode.iterm2" /></td><td>${modeSelect("", "clipboard", "new-mode")}</td><td><button id="add-mode">Add</button></td></tr>
-      </tbody></table>
     </section>
     <section class="card form">
       <h2>About</h2>
@@ -229,9 +217,7 @@ async function settingsView(view: HTMLElement) {
 
   const val = (id: string) => $<HTMLInputElement>("#" + id).value;
   const collect = (): Settings => {
-    const appModes: Record<string, CaptureMode> = { ...(s.appModes ?? {}) };
-    view.querySelectorAll<HTMLSelectElement>("select[data-mode]").forEach((sel) => (appModes[sel.dataset.mode!] = sel.value as CaptureMode));
-    return { ...s, baseURL: val("baseURL"), checkModel: val("checkModel"), qualityModel: val("qualityModel"), shortcut: val("shortcut"), language: val("language") as Settings["language"], appModes };
+    return { ...s, baseURL: val("baseURL"), checkModel: val("checkModel"), qualityModel: val("qualityModel"), shortcut: val("shortcut"), language: val("language") as Settings["language"] };
   };
   const save = async () => {
     try {
@@ -274,31 +260,6 @@ async function settingsView(view: HTMLElement) {
     await Kintsugi.guidePermission().catch(() => {});
     void show("settings");
   });
-  view.querySelectorAll<HTMLElement>("[data-del-mode]").forEach((a) => {
-    a.onclick = async (e) => {
-      e.preventDefault();
-      const next = collect();
-      delete next.appModes[a.dataset.delMode!];
-      settings = await Kintsugi.saveSettings(next);
-      void show("settings");
-    };
-  });
-  $("#add-mode").onclick = async () => {
-    const id = val("new-mode-id").trim();
-    if (!id) return;
-    const next = collect();
-    next.appModes[id] = $<HTMLSelectElement>("#new-mode").value as CaptureMode;
-    try {
-      settings = await Kintsugi.saveSettings(next);
-      void show("settings");
-    } catch (err) {
-      $("#save-out").innerHTML = `<span class="bad">${esc(errorText(err))}</span>`;
-    }
-  };
-}
-
-function modeSelect(id: string, m: string, elId = "") {
-  return `<select ${elId ? `id="${elId}"` : `data-mode="${esc(id)}"`}>${["clipboard", "manual"].map((x) => `<option ${x === m ? "selected" : ""}>${x}</option>`).join("")}</select>`;
 }
 
 // ---- First run ----
@@ -311,7 +272,7 @@ async function welcome(view: HTMLElement) {
       <p class="muted">Mistakes aren't erased — they're kept, and mended with gold.</p>
       <section class="card">
         <h2>1. Accessibility ${perm.trusted ? `<span class="ok">✓</span>` : ""}</h2>
-        <p>To read the text you select in Amp, Octarine or a browser and write corrections back, Kintsugi needs the Accessibility permission.</p>
+        <p>To read the text you select in any app and write corrections back, Kintsugi needs the Accessibility permission.</p>
         ${perm.available && !perm.trusted ? `<button id="grant" class="primary">Open System Settings…</button>` : perm.available ? "" : `<p class="muted">Not available in this build: Kintsugi will read what you copy.</p>`}
       </section>
       <section class="card">

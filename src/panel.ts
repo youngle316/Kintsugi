@@ -64,17 +64,16 @@ function highlight(text: string, issues: Issue[]): string {
 function render(c: Check) {
   current = c;
   const root = $("#panel");
-  const source = c.sourceName ? `<span class="muted">${esc(c.sourceName)}</span>` : "";
   if (c.state === "loading") {
     root.innerHTML = `
-      <header><strong>Kintsugi</strong>${source}</header>
+      <header><strong>Kintsugi</strong></header>
       <div class="loading"><span class="spinner"></span> Checking ${c.original ? `${c.original.split(/\s+/).length} words` : ""}…</div>
       <footer><span class="muted">Esc to close</span></footer>`;
     return;
   }
   if (c.state === "error") {
     root.innerHTML = `
-      <header><strong>Kintsugi</strong>${source}</header>
+      <header><strong>Kintsugi</strong></header>
       <p class="error">${esc(c.error)}</p>
       <footer><span class="muted">Esc to close</span><span class="grow"></span>
         <button id="settings">Settings…</button></footer>`;
@@ -103,7 +102,7 @@ function render(c: Check) {
     : `<div class="good">✓ Looks good</div>`;
   const replaceLabel = c.manualMode || !c.canReplace ? "Copy" : c.wholeField ? "Replace all" : "Replace";
   root.innerHTML = `
-    <header><strong>Kintsugi</strong>${source}<span class="grow"></span>
+    <header><strong>Kintsugi</strong><span class="grow"></span>
       <span class="muted">${errors} error${errors === 1 ? "" : "s"} · ${suggestions} suggestion${suggestions === 1 ? "" : "s"}</span></header>
     <div class="scroll">${body}</div>
     <footer>
