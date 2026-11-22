@@ -366,21 +366,38 @@ func (k *Kintsugi) makePanel() {
 		Width: 520, Height: 440, MinHeight: 160, MaxHeight: 640,
 		Content: ui.View(k.panelView),
 	})
-	// Hide rather than close, so that it shows at once the next time.
+	// Hide rather than close, so that it shows at once the next time; but
+	// a quit closes every window, and one kept open cancels it.
+	quitting := false
+	mygo.App.OnBeforeQuit(func(*mygo.QuitEvent) { quitting = true })
+	mygo.App.OnQuitCanceled(func() { quitting = false })
 	p.OnClose(func(e *mygo.CloseEvent) {
+		if quitting {
+			return
+		}
 		e.PreventDefault()
 		p.Hide()
 	})
-	// Gone as the user goes back to writing; the check stays saved.
-	p.OnBlur(p.Hide)
+	// Gone as the user goes back to writing, unless pinned; the check
+	// stays saved.
+	p.OnBlur(func() {
+		if !k.board.pinned {
+			p.Hide()
+		}
+	})
 	k.panel = p
 }
 
-// showPanel shows the check near the caret, or the mouse.
+// showPanel shows the check near the caret, or the mouse; pinned, where
+// the user put it.
 func (k *Kintsugi) showPanel(c *Check, caret *capture.Rect) {
 	k.update(c)
 	mygo.RunOnMain(func() {
 		p := k.panel
+		if k.board.pinned {
+			p.Show()
+			return
+		}
 		w, h := p.Size()
 		pt := mygo.Screen.CursorScreenPoint()
 		x, y := pt.X+12, pt.Y+18

@@ -19,6 +19,7 @@ import (
 	"github.com/lobehub/lobe-mygo/pkg/field"
 	"github.com/lobehub/lobe-mygo/pkg/layout"
 	"github.com/lobehub/lobe-mygo/pkg/lucide"
+	"github.com/lobehub/lobe-mygo/pkg/motion"
 	"github.com/lobehub/lobe-mygo/pkg/theme"
 	"github.com/youngle316/kintsugi/internal/llm"
 	"github.com/youngle316/kintsugi/internal/settings"
@@ -256,6 +257,66 @@ func section(c *ui.Context, tk *theme.Tokens, title, extra string, body func()) 
 	})
 }
 
+// filterSelect is field.Select at its small size, whose popup scrolls:
+// Lobe MyGo's caps the popup at 256 but lets the options spill out below.
+func filterSelect(c *ui.Context, selected *string, options []field.SelectOption) {
+	tk := theme.TokensOf(c)
+	sel := ui.SelectBase(c, selected)
+	tr := sel.Trigger.MinHeight(24).PaddingX(8).Gap(8).Radius(tk.BorderRadiusSM).FontSize(12).
+		AlignItems(ui.Center).TextColor(tk.Text).Background(tk.BgContainer).Cursor(ui.CursorPointer).Unselectable().
+		Transition(ui.ElementTransition{Duration: 150 * time.Millisecond, Ease: motion.EaseOut, Colors: true, Shadows: true})
+	border := tk.BorderSecondary
+	switch {
+	case sel.Open():
+		border = tk.Primary
+		tr.Shadow(0, 0, 0, 2, tk.PrimaryBg)
+	case tr.Hovered():
+		border = tk.Border
+	}
+	tr.Border(1, border)
+	label := ""
+	for _, o := range options {
+		if o.Value == *selected {
+			label = o.Label
+		}
+	}
+	tr.Children(func() {
+		ui.Text(c, label).Grow(1).MinWidth(0).SingleLine()
+		turn := float32(0)
+		if sel.Open() {
+			turn = 180
+		}
+		arrow := ui.Icon(c, lucide.ChevronDown()).FontSize(16).TextColor(tk.TextSecondary).Shrink(0)
+		arrow.Rotate(arrow.AnimateTo("turn", turn, ui.Animation{Duration: 150 * time.Millisecond, Ease: motion.EaseOut}))
+	})
+	width := tr.Bounds().W
+	sel.Popup(func(panel ui.Element) {
+		panel.Margin(4, 0, 0, 0).Radius(tk.BorderRadius).MinWidth(width).Clip().
+			Background(tk.BgElevated).Transition(motion.Popup()).AttachedOrigin()
+		tk.Elevate(panel, theme.BoxShadowSecondary)
+		panel.Children(func() {
+			ui.Scroll(c).MaxHeight(256).Children(func() {
+				ui.Column(c).Padding(4).Children(func() {
+					for _, o := range options {
+						c.Key(o.Value)
+						item := sel.Item(o.Value).Padding(6, 12).MinHeight(32).Gap(8).AlignItems(ui.Center).
+							Radius(tk.BorderRadiusSM).AlignSelf(ui.Stretch).FontSize(14).TextColor(tk.Text).Cursor(ui.CursorPointer)
+						if item.Highlighted() {
+							item.Background(tk.FillTertiary)
+						}
+						item.Children(func() {
+							ui.Text(c, o.Label).Grow(1).SingleLine()
+							if o.Value == *selected {
+								ui.Icon(c, lucide.Check()).FontSize(14).TextColor(tk.Primary).Margin(0, 0, 0, 8)
+							}
+						})
+					}
+				})
+			})
+		})
+	})
+}
+
 // ---- Overview ----
 
 func (k *Kintsugi) overviewPage(c *ui.Context, tk *theme.Tokens) {
@@ -378,16 +439,16 @@ func (k *Kintsugi) mistakesPage(c *ui.Context, tk *theme.Tokens) {
 	}
 	ui.Row(c).Gap(8).AlignItems(ui.Center).Wrap().Children(func() {
 		category, severity, since := v.category, v.severity, fmt.Sprint(v.sinceIndex)
-		ui.Box(c).Width(220).Children(func() {
-			field.Select(c.Key("category"), &category, field.SelectProps{Options: categories, Size: theme.Small})
+		ui.Box(c).Width(200).Children(func() {
+			filterSelect(c.Key("category"), &category, categories)
 		})
 		ui.Box(c).Width(180).Children(func() {
-			field.Select(c.Key("severity"), &severity, field.SelectProps{Size: theme.Small, Options: []field.SelectOption{
+			filterSelect(c.Key("severity"), &severity, []field.SelectOption{
 				{Value: "", Label: "Errors & suggestions"}, {Value: "error", Label: "Errors"}, {Value: "suggestion", Label: "Suggestions"},
-			}})
+			})
 		})
-		ui.Box(c).Width(140).Children(func() {
-			field.Select(c.Key("since"), &since, field.SelectProps{Options: periods, Size: theme.Small})
+		ui.Box(c).Width(132).Children(func() {
+			filterSelect(c.Key("since"), &since, periods)
 		})
 		if v.pattern != "" {
 			display.Tag(c, "Pattern: "+v.pattern, display.TagProps{Closable: true, Color: display.TagGold, OnClose: func() {
@@ -507,7 +568,7 @@ func (k *Kintsugi) settingsPage(c *ui.Context, tk *theme.Tokens) {
 			if f.Language == settings.LanguageEn {
 				lang = 1
 			}
-			action.Segmented(c.Key("lang"), &lang, []string{"中文", "English"}, action.SegmentedProps{})
+			action.Segmented(c.Key("lang"), &lang, []string{"中文", "English"}, action.SegmentedProps{}).AlignSelf(ui.Start)
 			f.Language = []settings.Language{settings.LanguageZh, settings.LanguageEn}[lang]
 		})
 		settingRow(c, "Shortcut", func() {
@@ -571,8 +632,9 @@ func (k *Kintsugi) settingsPage(c *ui.Context, tk *theme.Tokens) {
 func settingRow(c *ui.Context, label string, control func()) {
 	tk := theme.TokensOf(c)
 	ui.Row(c.Key(label)).Gap(24).AlignItems(ui.Center).MinHeight(40).Children(func() {
-		ui.Text(c, label).Grow(1).Basis(0).MinWidth(0).TextColor(tk.Text)
-		ui.Column(c).Width(360).Shrink(0).AlignItems(ui.Stretch).Children(control)
+		// The control gives way first in a narrow window, not the label.
+		ui.Text(c, label).Grow(1).Basis(0).MinWidth(136).TextColor(tk.Text)
+		ui.Column(c).Basis(360).Shrink(1).MinWidth(0).AlignItems(ui.Stretch).Children(control)
 	})
 }
 

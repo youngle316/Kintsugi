@@ -2,6 +2,8 @@ package main
 
 // The correction panel: shown by the shortcut over the app the user writes
 // in, which stays in front. Replace writes back, Copy copies, Esc ignores.
+// It drags by any free part of it, and pinned, it stays where it was put
+// and stays up as the user goes back to writing.
 
 import (
 	"fmt"
@@ -12,6 +14,7 @@ import (
 	"github.com/lobehub/lobe-mygo/pkg/action"
 	"github.com/lobehub/lobe-mygo/pkg/display"
 	"github.com/lobehub/lobe-mygo/pkg/feedback"
+	"github.com/lobehub/lobe-mygo/pkg/lucide"
 	"github.com/lobehub/lobe-mygo/pkg/theme"
 	"github.com/youngle316/kintsugi/internal/llm"
 	"github.com/youngle316/kintsugi/internal/settings"
@@ -19,8 +22,9 @@ import (
 
 // panelState is what the panel shows beside the check.
 type panelState struct {
-	hot  int  // the issue under the pointer, -1 for none
-	busy bool // an action is running
+	hot    int  // the issue under the pointer, -1 for none
+	busy   bool // an action is running
+	pinned bool // stays up when it loses the focus, where it was put
 }
 
 // panelView builds the panel.
@@ -36,12 +40,12 @@ func (k *Kintsugi) panelView(c *ui.Context) {
 	if done {
 		c.OnShortcut(ui.Cmd, ui.KeyEnter, func() { k.act(replaceAction(ch)) })
 	}
-	page := ui.Column(c).Fill().Padding(14, 16).Gap(10)
+	page := ui.Column(c).Fill().Padding(14, 16).Gap(10).DragWindow()
 	if !c.Vibrancy() {
 		page.Background(tk.BgElevated)
 	}
 	page.Children(func() {
-		ui.Row(c).Gap(8).AlignItems(ui.Center).DragWindow().Children(func() {
+		ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
 			ui.Icon(c, logo).FontSize(16).TextColor(tk.Gold)
 			ui.Text(c, "Kintsugi").FontWeight(600).TextColor(tk.Text)
 			ui.Spacer(c)
@@ -53,6 +57,13 @@ func (k *Kintsugi) panelView(c *ui.Context) {
 				if s := len(ch.Result.Issues) - errs; s > 0 {
 					display.Tag(c, plural(s, "suggestion"), display.TagProps{Color: display.TagWarning, Size: theme.Small})
 				}
+			}
+			pin, title := lucide.Pin(), "Pin"
+			if k.board.pinned {
+				pin, title = lucide.PinOff(), "Unpin"
+			}
+			if action.ActionIcon(c.Key("pin"), pin, action.ActionIconProps{Size: theme.Small, Active: k.board.pinned, Title: title}).Clicked() {
+				k.board.pinned = !k.board.pinned
 			}
 		})
 		switch {
