@@ -3,6 +3,18 @@
 Each version's section is its release notes: the update window shows it,
 and the release workflow puts it on the GitHub release.
 
+## 0.4.0
+
+- Press ⌥⌘E in any app to explain the English you selected in plain
+  English, with no Chinese: a sentence or a paragraph comes back in simple
+  words, with its hard words, idioms and phrasal verbs explained, each with
+  an example. Copy copies the explanation.
+- A single word or a short phrase gets a learner's dictionary entry: its
+  part of speech and register, its common meanings with an example each,
+  synonyms, opposites, collocations and word family.
+- Explain Selection in the menu bar, and the shortcut in Settings.
+- Every lookup is kept on this Mac, for a vocabulary book to come.
+
 ## 0.3.0
 
 - A new icon: a bowl mended with gold, the same in the menu bar, the Dock
