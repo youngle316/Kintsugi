@@ -84,14 +84,9 @@ type rawAnswer struct {
 
 // Parse reads the model's answer to the check of m.
 func Parse(content string, m Masked) (Result, error) {
-	content = strings.TrimSpace(content)
-	start, end := strings.Index(content, "{"), strings.LastIndex(content, "}")
-	if start < 0 || end < start {
-		return Result{}, errors.New("the model did not answer with JSON")
-	}
 	var raw rawAnswer
-	if err := json.Unmarshal([]byte(content[start:end+1]), &raw); err != nil {
-		return Result{}, fmt.Errorf("the model's JSON is invalid: %w", err)
+	if err := decodeAnswer(content, &raw); err != nil {
+		return Result{}, err
 	}
 	if strings.TrimSpace(raw.CorrectedText) == "" {
 		return Result{}, errors.New("the model's answer has no corrected_text")
@@ -137,6 +132,19 @@ func Parse(content string, m Masked) (Result, error) {
 		res.CorrectedText = original
 	}
 	return res, nil
+}
+
+// decodeAnswer reads the JSON object of the model's answer into v, without
+// the code fence or words models put around it.
+func decodeAnswer(content string, v any) error {
+	start, end := strings.Index(content, "{"), strings.LastIndex(content, "}")
+	if start < 0 || end < start {
+		return errors.New("the model did not answer with JSON")
+	}
+	if err := json.Unmarshal([]byte(content[start:end+1]), v); err != nil {
+		return fmt.Errorf("the model's JSON is invalid: %w", err)
+	}
+	return nil
 }
 
 // keepEdges gives corrected the leading and trailing white space of

@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"encoding/json"
 	"path/filepath"
 	"testing"
 	"time"
@@ -75,5 +76,44 @@ func TestSaveAndCount(t *testing.T) {
 	}
 	if len(o.Categories) != 3 || o.Categories[0].Key != "preposition_collocation" {
 		t.Errorf("categories = %+v", o.Categories)
+	}
+}
+
+func TestSaveLookup(t *testing.T) {
+	ctx := context.Background()
+	s, err := Open(ctx, filepath.Join(t.TempDir(), "k.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	entry := llm.Explanation{Model: "m", Terms: []llm.Term{}, Entry: &llm.Entry{
+		Headword: "roll out", PartOfSpeech: "phrasal verb",
+		Meanings: []llm.Meaning{{Meaning: "To make something new available.", Example: "They rolled out the app."}},
+	}}
+	text := llm.Explanation{Model: "m", Plain: "Use it.", Terms: []llm.Term{{Term: "leverage (verb)", Meaning: "To use."}}}
+	for _, l := range []Lookup{{Text: "rolled out", Explanation: entry}, {Text: "Leverage it.", Explanation: text}} {
+		l.CreatedAt = time.Now()
+		if err := s.SaveLookup(ctx, l); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// A later vocabulary book finds the word by its headword, in any case,
+	// and reads the whole entry back.
+	rows, err := s.db.Query(ctx, `SELECT selected_text, explanation FROM lookups WHERE headword = ? COLLATE NOCASE`, "Roll Out")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(rows.Values) != 1 || str(rows.Values[0][0]) != "rolled out" {
+		t.Fatalf("lookups of roll out = %v", rows.Values)
+	}
+	var back llm.Explanation
+	if err := json.Unmarshal([]byte(str(rows.Values[0][1])), &back); err != nil {
+		t.Fatal(err)
+	}
+	if back.Entry == nil || back.Entry.Meanings[0].Example != "They rolled out the app." {
+		t.Errorf("entry read back = %+v", back.Entry)
+	}
+	if rows, _ := s.db.Query(ctx, `SELECT COUNT(*) FROM lookups WHERE headword = ''`); i64(rows.Values[0][0]) != 1 {
+		t.Errorf("text lookups = %v, want 1", rows.Values)
 	}
 }

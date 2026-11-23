@@ -6,12 +6,14 @@
 // (internal/llm), a panel that leaves that app in front shows the result,
 // and every check is saved in SQLite (internal/store). The main window, a
 // window of native UI drawn with Lobe MyGo's components, shows the
-// statistics, the mistakes and the settings.
+// statistics, the mistakes and the settings. A second shortcut explains, in
+// the same panel, English the user reads in plain English.
 package main
 
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log"
 	"os"
 	"path/filepath"
@@ -71,40 +73,65 @@ func (k *Kintsugi) start() error {
 
 	k.makePanel()
 	k.makeTray()
-	if err := k.registerShortcut(k.settings.Get().Shortcut); err != nil {
-		log.Println("shortcut:", err)
-	}
 	s := k.settings.Get()
+	if err := k.registerShortcuts(s); err != nil {
+		log.Println("shortcuts:", err)
+	}
 	if !s.Onboarded || !k.HasAPIKey() || !k.Permission().Trusted && k.capture != nil {
 		k.OpenWindow("")
 	}
 	return nil
 }
 
-// registerShortcut makes accel the shortcut that checks the selection,
-// in place of the one before.
-func (k *Kintsugi) registerShortcut(accel string) error {
+// registerShortcuts makes s's shortcuts check and explain the selection,
+// in place of the ones before. When one fails, the ones before are kept;
+// at start, with none before, those that worked are kept.
+func (k *Kintsugi) registerShortcuts(s settings.Settings) error {
 	k.mu.Lock()
-	old := k.shortcut
+	old := [2]string{k.shortcut, k.explain}
 	k.mu.Unlock()
-	if old == accel && mygo.GlobalShortcut.IsRegistered(accel) {
-		return nil
+	accels := [2]string{s.Shortcut, s.ExplainShortcut}
+	runs := [2]func(){k.checkSelection, k.explainSelection}
+	register := func(i int, accel string) error {
+		return mygo.GlobalShortcut.Register(accel, func() { go runs[i]() })
 	}
-	if old != "" {
-		mygo.GlobalShortcut.Unregister(old)
+	// All of them first, so that the two can swap.
+	for _, a := range old {
+		if a != "" {
+			mygo.GlobalShortcut.Unregister(a)
+		}
 	}
-	err := mygo.GlobalShortcut.Register(accel, func() { go k.checkSelection() })
-	if err != nil {
-		if old != "" && old != accel {
-			// Keep the shortcut that worked.
-			if mygo.GlobalShortcut.Register(old, func() { go k.checkSelection() }) == nil {
-				return errors.Join(err, errors.New("kept "+old))
+	var ok [2]bool
+	var errs []error
+	for i, a := range accels {
+		if err := register(i, a); err != nil {
+			errs = append(errs, fmt.Errorf("the shortcut %s: %w", a, err))
+			continue
+		}
+		ok[i] = true
+	}
+	cur := accels
+	if len(errs) > 0 {
+		for i := range accels {
+			if ok[i] && old[i] != "" {
+				mygo.GlobalShortcut.Unregister(accels[i])
 			}
 		}
-		return err
+		for i := range accels {
+			switch {
+			case old[i] != "":
+				if register(i, old[i]) == nil {
+					cur[i] = old[i]
+				} else {
+					cur[i] = ""
+				}
+			case !ok[i]:
+				cur[i] = ""
+			}
+		}
 	}
 	k.mu.Lock()
-	k.shortcut = accel
+	k.shortcut, k.explain = cur[0], cur[1]
 	k.mu.Unlock()
-	return nil
+	return errors.Join(errs...)
 }

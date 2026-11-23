@@ -143,10 +143,27 @@ func (c *Client) Check(ctx context.Context, text, model string) (Result, error) 
 		return Result{}, ErrNoAPIKey
 	}
 	m := Mask(text)
+	var res Result
+	err := c.ask(ctx, model, Prompt(), m.Text, func(content string) (err error) {
+		res, err = Parse(content, m)
+		return err
+	})
+	if err != nil {
+		return Result{}, err
+	}
+	res.Model = model
+	res.WordCount = CountWords(m.Text)
+	return res, nil
+}
+
+// ask sends text to model with the system prompt, and gives the answer to
+// parse. An answer parse refuses is asked for once more, and a model that
+// refuses JSON mode or enable_thinking is asked without them.
+func (c *Client) ask(ctx context.Context, model, prompt, text string, parse func(string) error) error {
 	var lastErr error
 	plain := false // without JSON mode and enable_thinking, for models that refuse them
 	for attempt := 0; attempt < 2; attempt++ {
-		content, err := c.complete(ctx, model, m.Text, plain)
+		content, err := c.complete(ctx, model, prompt, text, plain)
 		var apiErr *APIError
 		if errors.As(err, &apiErr) && apiErr.Status == http.StatusBadRequest && !plain {
 			// The model may not take response_format or enable_thinking:
@@ -156,23 +173,20 @@ func (c *Client) Check(ctx context.Context, text, model string) (Result, error) 
 			continue
 		}
 		if err != nil {
-			return Result{}, err
+			return err
 		}
-		res, err := Parse(content, m)
-		if err == nil {
-			res.Model = model
-			res.WordCount = CountWords(m.Text)
-			return res, nil
+		if err = parse(content); err == nil {
+			return nil
 		}
 		lastErr = err
 	}
-	return Result{}, lastErr
+	return lastErr
 }
 
-func (c *Client) complete(ctx context.Context, model, text string, plain bool) (string, error) {
+func (c *Client) complete(ctx context.Context, model, prompt, text string, plain bool) (string, error) {
 	req := request{
 		Model:       model,
-		Messages:    []message{{Role: "system", Content: Prompt()}, {Role: "user", Content: text}},
+		Messages:    []message{{Role: "system", Content: prompt}, {Role: "user", Content: text}},
 		Temperature: 0.2,
 		MaxTokens:   4096,
 	}
@@ -216,7 +230,7 @@ func (c *Client) complete(ctx context.Context, model, text string, plain bool) (
 		return "", errors.New("SiliconFlow answered with no choices")
 	}
 	if r.Choices[0].FinishReason == "length" {
-		return "", errors.New("the model's answer was cut off: check a shorter text")
+		return "", errors.New("the model's answer was cut off: try a shorter text")
 	}
 	return r.Choices[0].Message.Content, nil
 }

@@ -74,17 +74,18 @@ type mainState struct {
 	issues                      []store.IssueRow
 
 	// The settings page edits form, filled once each time it opens.
-	formReady bool
-	form      settings.Settings
-	hotkey    string // form.Shortcut, as display.Hotkey writes it
-	keyInput  string
-	login     bool
-	version   VersionInfo
-	status    string
-	statusErr bool
-	testOut   string
-	testErr   bool
-	testing   bool
+	formReady     bool
+	form          settings.Settings
+	hotkey        string // form.Shortcut, as display.Hotkey writes it
+	explainHotkey string // form.ExplainShortcut, the same way
+	keyInput      string
+	login         bool
+	version       VersionInfo
+	status        string
+	statusErr     bool
+	testOut       string
+	testErr       bool
+	testing       bool
 }
 
 // navigate shows a page of the main window.
@@ -139,7 +140,7 @@ func (k *Kintsugi) load() {
 				v.err = err.Error()
 			}
 			if page == pageSettings && !v.formReady {
-				v.form, v.hotkey, v.login, v.version, v.formReady = s, toHotkey(s.Shortcut), login, k.Version(), true
+				v.form, v.hotkey, v.explainHotkey, v.login, v.version, v.formReady = s, toHotkey(s.Shortcut), toHotkey(s.ExplainShortcut), login, k.Version(), true
 			}
 		})
 	}()
@@ -207,6 +208,10 @@ func (k *Kintsugi) sidebar(c *ui.Context, tk *theme.Tokens) {
 		ui.Row(c).Gap(8).AlignItems(ui.Center).Padding(0, 8).Children(func() {
 			display.Text(c, "Check", display.TextProps{Type: display.TextSecondary, FontSize: tk.FontSizeSM})
 			display.Hotkey(c, toHotkey(v.settings.Shortcut), display.HotkeyProps{Size: theme.Small})
+		})
+		ui.Row(c).Gap(8).AlignItems(ui.Center).Padding(0, 8).Children(func() {
+			display.Text(c, "Explain", display.TextProps{Type: display.TextSecondary, FontSize: tk.FontSizeSM})
+			display.Hotkey(c, toHotkey(v.settings.ExplainShortcut), display.HotkeyProps{Size: theme.Small})
 		})
 	})
 }
@@ -574,6 +579,9 @@ func (k *Kintsugi) settingsPage(c *ui.Context, tk *theme.Tokens) {
 		settingRow(c, "Shortcut", func() {
 			field.HotkeyInput(c.Key("shortcut"), &v.hotkey, field.HotkeyInputProps{ResetValue: "mod+alt+g", Platform: display.HotkeyApple})
 		})
+		settingRow(c, "Explain in plain English", func() {
+			field.HotkeyInput(c.Key("explain-shortcut"), &v.explainHotkey, field.HotkeyInputProps{ResetValue: "mod+alt+e", Platform: display.HotkeyApple})
+		})
 		settingRow(c, "Open at login", func() {
 			login := v.login
 			choice.Switch(c.Key("login"), &v.login, choice.SwitchProps{}).Label("Open at login")
@@ -643,12 +651,13 @@ func (k *Kintsugi) saveForm() {
 	v := &k.view
 	f := v.form
 	f.Shortcut = toAccel(v.hotkey)
+	f.ExplainShortcut = toAccel(v.explainHotkey)
 	s, err := k.SaveSettings(f)
 	if err != nil {
 		v.status, v.statusErr = err.Error(), true
 		return
 	}
-	v.form, v.settings, v.hotkey, v.status, v.statusErr = s, s, toHotkey(s.Shortcut), "Saved", false
+	v.form, v.settings, v.hotkey, v.explainHotkey, v.status, v.statusErr = s, s, toHotkey(s.Shortcut), toHotkey(s.ExplainShortcut), "Saved", false
 }
 
 // saveKey keeps the API key in the Keychain off the main thread; an empty

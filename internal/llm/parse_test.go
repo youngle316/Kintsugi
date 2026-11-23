@@ -117,3 +117,79 @@ func TestCheckRetries(t *testing.T) {
 		t.Errorf("result = %+v", res)
 	}
 }
+
+func TestParseExplanation(t *testing.T) {
+	m := Mask("Run `make` to roll out the fix.")
+	answer := "Sure:\n```json\n" + `{
+	  "plain": "Use ⟦C1⟧ to put the fix live for everyone.",
+	  "terms": [
+	    {"term": " roll out (phrasal verb) ", "meaning": "To make something available to users.", "example": "They rolled out the update on Monday."},
+	    {"term": "fix", "meaning": ""}
+	  ]
+	}` + "\n```"
+	ex, err := ParseExplanation(answer, m)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if want := "Use `make` to put the fix live for everyone."; ex.Plain != want {
+		t.Errorf("plain = %q, want %q", ex.Plain, want)
+	}
+	if len(ex.Terms) != 1 || ex.Terms[0].Term != "roll out (phrasal verb)" {
+		t.Errorf("terms = %+v, want only roll out (the one without a meaning dropped)", ex.Terms)
+	}
+	if _, err := ParseExplanation(`{"plain": " ", "terms": []}`, m); err == nil {
+		t.Error("an answer without a plain version was accepted")
+	}
+}
+
+func TestIsPhrase(t *testing.T) {
+	for text, want := range map[string]bool{
+		"mitigate":            true,
+		"  mitigate. ":        true, // a word selected with its period
+		"bite the bullet":     true,
+		"“roll out”":          true,
+		"once in a while":     true, // 4 words
+		"once in a blue moon": false,
+		"It works. Ship it":   false, // two sentences
+		"roll\nout":           false,
+		"run `make`":          false,
+		"see https://x.dev":   false,
+		"":                    false,
+	} {
+		if got := IsPhrase(text); got != want {
+			t.Errorf("IsPhrase(%q) = %v, want %v", text, got, want)
+		}
+	}
+}
+
+func TestParseEntry(t *testing.T) {
+	answer := `{
+	  "headword": " roll out ", "part_of_speech": "Phrasal Verb", "register": "Neutral",
+	  "meanings": [
+	    {"meaning": "To make something new available.", "example": "They rolled out the app."},
+	    {"meaning": " "},
+	    {"meaning": "To push something flat.", "example": ""},
+	    {"meaning": "To arrive."},
+	    {"meaning": "A fourth one."}
+	  ],
+	  "synonyms": ["launch", "Launch", " ", "release"],
+	  "collocations": ["roll out a feature"]
+	}`
+	ex, err := ParseEntry(answer, Mask("rolled out"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	e := ex.Entry
+	if e == nil || e.Headword != "roll out" || e.PartOfSpeech != "phrasal verb" || e.Register != "" {
+		t.Fatalf("entry = %+v", e)
+	}
+	if len(e.Meanings) != 3 || e.Meanings[1].Meaning != "To push something flat." {
+		t.Errorf("meanings = %+v, want the 3 first that are not blank", e.Meanings)
+	}
+	if strings.Join(e.Synonyms, ",") != "launch,release" || len(e.Opposites) != 0 || e.Opposites == nil {
+		t.Errorf("synonyms = %q, opposites = %#v", e.Synonyms, e.Opposites)
+	}
+	if _, err := ParseEntry(`{"headword": "xyz", "meanings": []}`, Mask("xyz")); err == nil {
+		t.Error("an entry without a meaning was accepted")
+	}
+}

@@ -1,9 +1,11 @@
-// Package store keeps Kintsugi's checks and the mistakes they found in a
-// local SQLite database, through MyGo's sqlite plugin.
+// Package store keeps Kintsugi's checks and the mistakes they found, and
+// the explanations the user looked up, in a local SQLite database, through
+// MyGo's sqlite plugin.
 package store
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
@@ -45,7 +47,20 @@ var schema = []string{
 		explanation_en TEXT NOT NULL DEFAULT '',
 		sentence TEXT NOT NULL DEFAULT ''
 	)`,
+	// One row per explanation, kept for a vocabulary book: headword is the
+	// entry's of a word or phrase, '' for a text; explanation is the whole
+	// llm.Explanation as JSON.
+	`CREATE TABLE IF NOT EXISTS lookups (
+		id INTEGER PRIMARY KEY,
+		created_at INTEGER NOT NULL,
+		capture_method TEXT NOT NULL DEFAULT '',
+		selected_text TEXT NOT NULL,
+		headword TEXT NOT NULL DEFAULT '',
+		explanation TEXT NOT NULL,
+		model TEXT NOT NULL DEFAULT ''
+	)`,
 	`CREATE INDEX IF NOT EXISTS submissions_created ON submissions(created_at)`,
+	`CREATE INDEX IF NOT EXISTS lookups_headword ON lookups(headword COLLATE NOCASE)`,
 	`CREATE INDEX IF NOT EXISTS issues_submission ON issues(submission_id)`,
 	`CREATE INDEX IF NOT EXISTS issues_pattern ON issues(pattern)`,
 }
@@ -103,6 +118,30 @@ func (s *Store) Save(ctx context.Context, sub Submission) (int64, error) {
 		return 0, err
 	}
 	return res[0].LastInsertID, nil
+}
+
+// Lookup is an explanation to save.
+type Lookup struct {
+	CreatedAt     time.Time
+	CaptureMethod string
+	Text          string // what the user selected
+	Explanation   llm.Explanation
+}
+
+// SaveLookup records an explanation the user looked up.
+func (s *Store) SaveLookup(ctx context.Context, l Lookup) error {
+	data, err := json.Marshal(l.Explanation)
+	if err != nil {
+		return err
+	}
+	headword := ""
+	if l.Explanation.Entry != nil {
+		headword = l.Explanation.Entry.Headword
+	}
+	_, err = s.db.Execute(ctx, `INSERT INTO lookups (created_at, capture_method, selected_text, headword, explanation, model)
+		VALUES (?, ?, ?, ?, ?, ?)`,
+		l.CreatedAt.UnixMilli(), l.CaptureMethod, l.Text, headword, string(data), l.Explanation.Model)
+	return err
 }
 
 // SetAction records what the user did with a check.

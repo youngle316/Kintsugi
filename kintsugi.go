@@ -34,7 +34,8 @@ type Kintsugi struct {
 	capture  capture.Capture // nil where the native module is missing
 
 	mu       sync.Mutex
-	shortcut string
+	shortcut string // the shortcut that checks
+	explain  string // the shortcut that explains
 	panel    *mygo.Window
 	main     *mygo.Window
 	tray     *mygo.Tray
@@ -47,26 +48,44 @@ type Kintsugi struct {
 	board panelState
 }
 
-// Check is a correction the panel shows.
+// Check is what the panel shows: a correction of the English the user
+// wrote, or an explanation of English they read.
 type Check struct {
+	// Mode is modeCheck or modeExplain.
+	Mode string
 	// State is "loading", "done" or "error".
-	State      string
-	ID         int64
-	Original   string
-	Result     *llm.Result
-	Error      string
-	Method     string
-	WholeField bool
-	Language   string
-	CanReplace bool
-	ManualMode bool
+	State       string
+	ID          int64
+	Original    string
+	Result      *llm.Result      // done, of a check
+	Explanation *llm.Explanation // done, of an explanation
+	Error       string
+	Method      string
+	WholeField  bool
+	Language    string
+	CanReplace  bool
+	ManualMode  bool
 }
+
+// The modes of the panel.
+const (
+	modeCheck   = "check"
+	modeExplain = "explain"
+)
 
 // ---- The check ----
 
 // checkSelection reads the selection of the app in front, shows the panel
 // and corrects the text. It runs on a goroutine of its own.
-func (k *Kintsugi) checkSelection() {
+func (k *Kintsugi) checkSelection() { k.run(modeCheck) }
+
+// explainSelection reads the selection of the app in front, shows the
+// panel and explains the text in plain English. It runs on a goroutine of
+// its own. Explanations are saved apart from checks, for a vocabulary book
+// to come: they are not the user's mistakes.
+func (k *Kintsugi) explainSelection() { k.run(modeExplain) }
+
+func (k *Kintsugi) run(mode string) {
 	k.mu.Lock()
 	if k.busy {
 		k.mu.Unlock()
@@ -77,7 +96,7 @@ func (k *Kintsugi) checkSelection() {
 	defer func() { k.mu.Lock(); k.busy = false; k.mu.Unlock() }()
 
 	s := k.settings.Get()
-	c := &Check{State: "loading", Language: string(s.Language)}
+	c := &Check{Mode: mode, State: "loading", Language: string(s.Language)}
 	text, caret, err := k.read(c)
 	if err != nil {
 		c.State, c.Error = "error", err.Error()
@@ -91,6 +110,21 @@ func (k *Kintsugi) checkSelection() {
 	client := &llm.Client{BaseURL: s.BaseURL, APIKey: key}
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
+	if mode == modeExplain {
+		ex, err := client.Explain(ctx, text, s.CheckModel)
+		if err != nil {
+			c.State, c.Error = "error", err.Error()
+			k.update(c)
+			return
+		}
+		c.Explanation, c.State = &ex, "done"
+		k.update(c)
+		err = k.db.SaveLookup(ctx, store.Lookup{CreatedAt: time.Now(), CaptureMethod: c.Method, Text: text, Explanation: ex})
+		if err != nil {
+			log.Println("saving the lookup:", err)
+		}
+		return
+	}
 	res, err := client.Check(ctx, text, s.CheckModel)
 	if err != nil {
 		c.State, c.Error = "error", err.Error()
@@ -110,9 +144,9 @@ func (k *Kintsugi) checkSelection() {
 	k.reload()
 }
 
-// read gets the text to check: the selection of the app in front, read
-// the same way in every app, else, without the native module, what the
-// user copied.
+// read gets the text to check or explain: the selection of the app in
+// front, read the same way in every app, else, without the native module,
+// what the user copied.
 func (k *Kintsugi) read(c *Check) (string, *capture.Rect, error) {
 	if k.capture != nil && !k.capture.IsTrusted() {
 		return "", nil, errors.New("Kintsugi needs the Accessibility permission to read the selection. Open Kintsugi ▸ Settings to grant it")
@@ -121,7 +155,7 @@ func (k *Kintsugi) read(c *Check) (string, *capture.Rect, error) {
 		c.Method, c.ManualMode = "manual_clipboard", true
 		text := mygo.Clipboard.ReadText()
 		if strings.TrimSpace(text) == "" {
-			return "", nil, errors.New("the clipboard has no text: copy what you wrote (⌘C), then press the shortcut")
+			return "", nil, errors.New("the clipboard has no text: copy the text (⌘C), then press the shortcut")
 		}
 		return text, nil, nil
 	}
@@ -130,7 +164,7 @@ func (k *Kintsugi) read(c *Check) (string, *capture.Rect, error) {
 	})
 	if err != nil {
 		if errors.Is(err, capture.ErrNoText) {
-			return "", nil, errors.New("nothing to check: select some text first")
+			return "", nil, fmt.Errorf("nothing to %s: select some text first", c.Mode)
 		}
 		return "", nil, err
 	}
@@ -217,19 +251,17 @@ func (k *Kintsugi) Overview(ctx context.Context, days int) (store.Overview, erro
 	return k.db.Overview(ctx, since)
 }
 
-// SaveSettings saves the settings and registers the shortcut they name.
+// SaveSettings saves the settings and registers the shortcuts they name.
 func (k *Kintsugi) SaveSettings(s settings.Settings) (settings.Settings, error) {
 	old := k.settings.Get()
 	s.Onboarded = s.Onboarded || old.Onboarded
 	if err := s.Validate(); err != nil {
 		return old, err
 	}
-	if s.Shortcut != old.Shortcut {
-		var err error
-		mygo.RunOnMain(func() { err = k.registerShortcut(s.Shortcut) })
-		if err != nil {
-			return old, fmt.Errorf("the shortcut %s: %w", s.Shortcut, err)
-		}
+	var err error
+	mygo.RunOnMain(func() { err = k.registerShortcuts(s) })
+	if err != nil {
+		return old, err
 	}
 	return k.settings.Set(s)
 }
@@ -434,6 +466,7 @@ func (k *Kintsugi) makeTray() {
 		ToolTip:        "Kintsugi",
 		Menu: mygo.NewMenu([]*mygo.MenuItem{
 			{Label: "Check Selection", Click: func(*mygo.MenuItem, *mygo.Window) { go k.checkSelection() }},
+			{Label: "Explain Selection", Click: func(*mygo.MenuItem, *mygo.Window) { go k.explainSelection() }},
 			mygo.Separator(),
 			{Label: "Open Kintsugi", Click: func(*mygo.MenuItem, *mygo.Window) { go k.OpenWindow("overview") }},
 			{Label: "Mistakes", Click: func(*mygo.MenuItem, *mygo.Window) { go k.OpenWindow("mistakes") }},

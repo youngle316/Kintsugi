@@ -29,6 +29,8 @@ type Settings struct {
 	QualityModel string   `json:"qualityModel"`
 	Language     Language `json:"language"`
 	Shortcut     string   `json:"shortcut"`
+	// ExplainShortcut explains the selection in plain English.
+	ExplainShortcut string `json:"explainShortcut"`
 	// Onboarded is set once the first-run guide was finished or skipped.
 	Onboarded bool `json:"onboarded"`
 }
@@ -36,11 +38,12 @@ type Settings struct {
 // Defaults are the settings of a new install.
 func Defaults() Settings {
 	return Settings{
-		BaseURL:      llm.DefaultBaseURL,
-		CheckModel:   "deepseek-ai/DeepSeek-V4.1-Flash",
-		QualityModel: "deepseek-ai/DeepSeek-V4-Pro",
-		Language:     LanguageZh,
-		Shortcut:     "Alt+Cmd+G",
+		BaseURL:         llm.DefaultBaseURL,
+		CheckModel:      "deepseek-ai/DeepSeek-V4.1-Flash",
+		QualityModel:    "deepseek-ai/DeepSeek-V4-Pro",
+		Language:        LanguageZh,
+		Shortcut:        "Alt+Cmd+G",
+		ExplainShortcut: "Alt+Cmd+E",
 	}
 }
 
@@ -50,6 +53,7 @@ func (s *Settings) Validate() error {
 	s.CheckModel = strings.TrimSpace(s.CheckModel)
 	s.QualityModel = strings.TrimSpace(s.QualityModel)
 	s.Shortcut = strings.TrimSpace(s.Shortcut)
+	s.ExplainShortcut = strings.TrimSpace(s.ExplainShortcut)
 	switch {
 	case !strings.HasPrefix(s.BaseURL, "https://") && !strings.HasPrefix(s.BaseURL, "http://"):
 		return errors.New("the API address must start with https://")
@@ -57,6 +61,10 @@ func (s *Settings) Validate() error {
 		return errors.New("choose a model for checking")
 	case s.Shortcut == "":
 		return errors.New("choose a shortcut")
+	case s.ExplainShortcut == "":
+		return errors.New("choose a shortcut to explain")
+	case strings.EqualFold(s.ExplainShortcut, s.Shortcut):
+		return errors.New("checking and explaining need different shortcuts")
 	}
 	if s.QualityModel == "" {
 		s.QualityModel = s.CheckModel
