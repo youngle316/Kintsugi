@@ -3,6 +3,16 @@
 Each version's section is its release notes: the update window shows it,
 and the release workflow puts it on the GitHub release.
 
+## 0.5.0
+
+- A simpler panel: its actions are icons at the top, with their names and
+  shortcuts in tooltips (✓ replaces, ✕ ignores or closes), and the footer
+  is gone.
+- Mistakes show their level as an icon, and the counts of errors and
+  suggestions as icons with a number.
+- Dictionary entries mark synonyms, opposites, collocations and word family
+  with an icon, and keep at most 3 of each.
+
 ## 0.4.0
 
 - Press ⌥⌘E in any app to explain the English you selected in plain
