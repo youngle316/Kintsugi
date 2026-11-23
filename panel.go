@@ -47,30 +47,7 @@ func (k *Kintsugi) panelView(c *ui.Context) {
 		page.Background(tk.BgElevated)
 	}
 	page.Children(func() {
-		ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
-			ui.Image(c, logo).Width(18).Height(18).TextColor(tk.Text)
-			ui.Text(c, "Kintsugi").FontWeight(600).TextColor(tk.Text)
-			ui.Spacer(c)
-			if done && explain && ch.Explanation.Entry == nil && len(ch.Explanation.Terms) > 0 {
-				display.Tag(c, plural(len(ch.Explanation.Terms), "term"), display.TagProps{Color: display.TagGold, Size: theme.Small})
-			}
-			if done && !explain && len(ch.Result.Issues) > 0 {
-				errs := countErrors(ch.Result.Issues)
-				if errs > 0 {
-					display.Tag(c, plural(errs, "error"), display.TagProps{Color: display.TagError, Size: theme.Small})
-				}
-				if s := len(ch.Result.Issues) - errs; s > 0 {
-					display.Tag(c, plural(s, "suggestion"), display.TagProps{Color: display.TagWarning, Size: theme.Small})
-				}
-			}
-			pin, title := lucide.Pin(), "Pin"
-			if k.board.pinned {
-				pin, title = lucide.PinOff(), "Unpin"
-			}
-			if action.ActionIcon(c.Key("pin"), pin, action.ActionIconProps{Size: theme.Small, Active: k.board.pinned, Title: title}).Clicked() {
-				k.board.pinned = !k.board.pinned
-			}
-		})
+		k.panelHeader(c, tk, ch)
 		switch {
 		case ch == nil || ch.State == "loading":
 			ui.Column(c).Grow(1).Center().Gap(10).Children(func() {
@@ -101,7 +78,6 @@ func (k *Kintsugi) panelView(c *ui.Context) {
 		default:
 			k.corrections(c, tk, ch)
 		}
-		k.panelFooter(c, tk, ch)
 	})
 }
 
@@ -114,8 +90,7 @@ func explained(c *ui.Context, tk *theme.Tokens, ex *llm.Explanation) {
 	}
 	ui.Scroll(c.Key("terms")).Grow(1).Basis(0).Children(func() {
 		ui.Column(c).Gap(10).Children(func() {
-			ui.Column(c).Gap(6).Padding(10, 12).Radius(tk.BorderRadiusLG).Background(tk.FillQuaternary).Border(1, tk.BorderSecondary).Children(func() {
-				ui.Text(c, "In plain English").FontSize(tk.FontSizeSM).TextColor(tk.TextTertiary)
+			ui.Column(c).Padding(10, 12).Radius(tk.BorderRadiusLG).Background(tk.FillQuaternary).Border(1, tk.BorderSecondary).Children(func() {
 				ui.RichText(c, ui.Span{Text: ex.Plain}).Selectable().LineHeight(1.6)
 			})
 			for i, t := range ex.Terms {
@@ -159,22 +134,23 @@ func entry(c *ui.Context, tk *theme.Tokens, e *llm.Entry) {
 				}
 			})
 			ui.Column(c).Gap(8).Children(func() {
-				related(c, tk, "Synonyms", e.Synonyms)
-				related(c, tk, "Opposites", e.Opposites)
-				related(c, tk, "Collocations", e.Collocations)
-				related(c, tk, "Word family", e.WordFamily)
+				related(c, tk, lucide.EqualApproximately(), "Synonyms", e.Synonyms)
+				related(c, tk, lucide.ArrowLeftRight(), "Opposites", e.Opposites)
+				related(c, tk, lucide.Link2(), "Collocations", e.Collocations)
+				related(c, tk, lucide.Network(), "Word family", e.WordFamily)
 			})
 		})
 	})
 }
 
-// related shows words related to an entry under a label, none when empty.
-func related(c *ui.Context, tk *theme.Tokens, label string, words []string) {
+// related shows words related to an entry after the icon of their kind,
+// named by its tooltip; none when empty.
+func related(c *ui.Context, tk *theme.Tokens, svg *ui.SVG, label string, words []string) {
 	if len(words) == 0 {
 		return
 	}
-	ui.Row(c.Key(label)).Gap(12).AlignItems(ui.Start).Children(func() {
-		ui.Text(c, label).FontSize(tk.FontSizeSM).TextColor(tk.TextTertiary).Width(84).Shrink(0).Padding(2, 0, 0, 0)
+	ui.Row(c.Key(label)).Gap(10).AlignItems(ui.Start).Children(func() {
+		ui.Image(c, svg).Width(16).Height(16).Shrink(0).Margin(3, 0, 0, 0).TextColor(tk.TextTertiary).Tooltip(label).Label(label)
 		ui.Row(c).Grow(1).Basis(0).Gap(6).Wrap().Children(func() {
 			for i, w := range words {
 				display.Tag(c.Key(i), w, display.TagProps{Size: theme.Small})
@@ -231,7 +207,7 @@ func (k *Kintsugi) corrections(c *ui.Context, tk *theme.Tokens, ch *Check) {
 				}
 				row.Children(func() {
 					ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
-						severityTag(c, is.Severity)
+						severityIcon(c, tk, is.Severity)
 						ui.Text(c, categoryLabel(is.Category, lang)).FontSize(tk.FontSizeSM).TextColor(tk.TextTertiary)
 					})
 					diff(c, tk, is.Original, is.Corrected)
@@ -242,57 +218,86 @@ func (k *Kintsugi) corrections(c *ui.Context, tk *theme.Tokens, ch *Check) {
 	})
 }
 
-func (k *Kintsugi) panelFooter(c *ui.Context, tk *theme.Tokens, ch *Check) {
-	ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
-		done := ch != nil && ch.State == "done"
-		explain := ch != nil && ch.Mode == modeExplain
-		ui.Row(c).Gap(6).AlignItems(ui.Center).Children(func() {
-			display.Hotkey(c, "esc", display.HotkeyProps{Size: theme.Small})
-			esc := "ignore"
-			if explain {
-				esc = "close"
-			}
-			display.Text(c, esc, display.TextProps{Type: display.TextSecondary, FontSize: tk.FontSizeSM})
-			if done && !explain && len(ch.Result.Issues) > 0 {
-				display.Hotkey(c, "mod+enter", display.HotkeyProps{Size: theme.Small})
-				display.Text(c, strings.ToLower(replaceLabel(ch)), display.TextProps{Type: display.TextSecondary, FontSize: tk.FontSizeSM})
-			}
-		})
+// panelHeader is the logo, the counts of a check and the panel's actions,
+// as icons with tooltips: no words where an icon says it.
+func (k *Kintsugi) panelHeader(c *ui.Context, tk *theme.Tokens, ch *Check) {
+	done := ch != nil && ch.State == "done"
+	explain := ch != nil && ch.Mode == modeExplain
+	ui.Row(c).Gap(4).AlignItems(ui.Center).Children(func() {
+		ui.Image(c, logo).Width(18).Height(18).TextColor(tk.Text).Tooltip("Kintsugi")
 		ui.Spacer(c)
-		small := action.ButtonProps{Size: theme.Small}
-		primary := action.ButtonProps{Size: theme.Small, Variant: action.Primary}
+		if done && !explain && len(ch.Result.Issues) > 0 {
+			errs := countErrors(ch.Result.Issues)
+			count(c.Key("errors"), tk, lucide.CircleX(), tk.Error, errs, "error")
+			count(c.Key("suggestions"), tk, lucide.Lightbulb(), tk.Warning, len(ch.Result.Issues)-errs, "suggestion")
+		}
+		icon := func(key string, svg *ui.SVG, title string, p action.ActionIconProps) bool {
+			p.Size, p.Title = theme.Small, title
+			return action.ActionIcon(c.Key(key), svg, p).Disabled(k.board.busy).Clicked()
+		}
 		switch {
 		case ch != nil && ch.State == "error":
-			if action.Button(c, "Settings…", small).Clicked() {
+			if icon("settings", lucide.Settings(), "Settings…", action.ActionIconProps{}) {
 				k.act("ignore")
 				go k.OpenWindow(pageSettings)
 			}
 		case done && explain:
-			if action.Button(c, "Copy", small).Disabled(k.board.busy).Clicked() {
+			if icon("copy", lucide.Copy(), "Copy", action.ActionIconProps{}) {
 				k.act("copy")
-			}
-			if action.Button(c, "Done", primary).Clicked() {
-				k.act("ignore")
 			}
 		case done && len(ch.Result.Issues) > 0:
-			if action.Button(c, "Ignore", small).Disabled(k.board.busy).Clicked() {
-				k.act("ignore")
+			if replaceAction(ch) == "copy" {
+				if icon("copy", lucide.Copy(), "Copy (⌘↩)", action.ActionIconProps{Variant: action.ActionIconFilled}) {
+					k.act("copy")
+				}
+				break
 			}
-			if action.Button(c, "Copy", small).Disabled(k.board.busy).Clicked() {
+			if icon("copy", lucide.Copy(), "Copy", action.ActionIconProps{}) {
 				k.act("copy")
 			}
-			if action.Button(c, replaceLabel(ch), primary).Disabled(k.board.busy).Clicked() {
-				k.act(replaceAction(ch))
+			title := "Replace (⌘↩)"
+			if ch.WholeField {
+				title = "Replace all (⌘↩)"
 			}
-		case done:
-			if action.Button(c, "Done", primary).Clicked() {
-				k.act("ignore")
-			}
-		default:
-			if action.Button(c, "Cancel", small).Clicked() {
-				k.act("ignore")
+			if icon("replace", lucide.Check(), title, action.ActionIconProps{Variant: action.ActionIconFilled}) {
+				k.act("replace")
 			}
 		}
+		pin, title := lucide.Pin(), "Pin"
+		if k.board.pinned {
+			pin, title = lucide.PinOff(), "Unpin"
+		}
+		if action.ActionIcon(c.Key("pin"), pin, action.ActionIconProps{Size: theme.Small, Active: k.board.pinned, Title: title}).Clicked() {
+			k.board.pinned = !k.board.pinned
+		}
+		closeTitle := "Close (Esc)"
+		if done && !explain && len(ch.Result.Issues) > 0 {
+			closeTitle = "Ignore (Esc)"
+		}
+		if action.ActionIcon(c.Key("close"), lucide.X(), action.ActionIconProps{Size: theme.Small, Title: closeTitle}).Clicked() {
+			k.act("ignore")
+		}
+	})
+}
+
+// severityIcon shows an issue's level as the icon of its count.
+func severityIcon(c *ui.Context, tk *theme.Tokens, severity string) {
+	svg, color, label := lucide.Lightbulb(), tk.Warning, "Suggestion"
+	if severity == "error" {
+		svg, color, label = lucide.CircleX(), tk.Error, "Error"
+	}
+	ui.Image(c, svg).Width(14).Height(14).TextColor(color).Tooltip(label).Label(label)
+}
+
+// count shows n of a kind of issue as its icon and the number, none when
+// n is 0.
+func count(c *ui.Context, tk *theme.Tokens, svg *ui.SVG, color ui.Color, n int, word string) {
+	if n == 0 {
+		return
+	}
+	ui.Row(c).Gap(3).AlignItems(ui.Center).Padding(0, 6, 0, 2).Tooltip(plural(n, word)).Children(func() {
+		ui.Image(c, svg).Width(14).Height(14).TextColor(color)
+		ui.Text(c, fmt.Sprint(n)).FontSize(tk.FontSizeSM).FontWeight(600).TextColor(color)
 	})
 }
 
@@ -331,16 +336,6 @@ func replaceAction(ch *Check) string {
 		return "copy"
 	}
 	return "replace"
-}
-
-func replaceLabel(ch *Check) string {
-	switch {
-	case ch.ManualMode || !ch.CanReplace:
-		return "Copy"
-	case ch.WholeField:
-		return "Replace all"
-	}
-	return "Replace"
 }
 
 // highlight marks each issue's span in the corrected text, the first time

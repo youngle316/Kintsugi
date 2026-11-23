@@ -172,7 +172,7 @@ func TestParseEntry(t *testing.T) {
 	    {"meaning": "To arrive."},
 	    {"meaning": "A fourth one."}
 	  ],
-	  "synonyms": ["launch", "Launch", " ", "release"],
+	  "synonyms": ["launch", "Launch", " ", "release", "ship", "debut"],
 	  "collocations": ["roll out a feature"]
 	}`
 	ex, err := ParseEntry(answer, Mask("rolled out"))
@@ -186,7 +186,7 @@ func TestParseEntry(t *testing.T) {
 	if len(e.Meanings) != 3 || e.Meanings[1].Meaning != "To push something flat." {
 		t.Errorf("meanings = %+v, want the 3 first that are not blank", e.Meanings)
 	}
-	if strings.Join(e.Synonyms, ",") != "launch,release" || len(e.Opposites) != 0 || e.Opposites == nil {
+	if strings.Join(e.Synonyms, ",") != "launch,release,ship" || len(e.Opposites) != 0 || e.Opposites == nil {
 		t.Errorf("synonyms = %q, opposites = %#v", e.Synonyms, e.Opposites)
 	}
 	if _, err := ParseEntry(`{"headword": "xyz", "meanings": []}`, Mask("xyz")); err == nil {

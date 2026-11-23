@@ -105,11 +105,11 @@ Return JSON only:
   offensive; "" when it is neutral.
 - meanings: the 1–3 most common meanings, the most common first. meaning is
   one short sentence; example is a new, everyday sentence that uses it.
-- synonyms: up to 4 simpler words or phrases that mean about the same.
+- synonyms: up to 3 simpler words or phrases that mean about the same.
 - opposites: up to 3, or [].
-- collocations: up to 4 short, common combinations with the headword, such
+- collocations: up to 3 short, common combinations with the headword, such
   as "mitigate the risk" or "roll out a feature".
-- word_family: up to 4 other forms with their part of speech, such as
+- word_family: up to 3 other forms with their part of speech, such as
   "mitigation (noun)"; [] for idioms and phrases.
 - When it is not English, or a misspelling, the one meaning says so and
   names the word that was probably meant.`
@@ -183,10 +183,10 @@ func ParseEntry(content string, m Masked) (Explanation, error) {
 		PartOfSpeech: strings.ToLower(strings.TrimSpace(raw.PartOfSpeech)),
 		Register:     strings.ToLower(strings.TrimSpace(raw.Register)),
 		Meanings:     []Meaning{},
-		Synonyms:     words(raw.Synonyms, 4),
+		Synonyms:     words(raw.Synonyms, 3),
 		Opposites:    words(raw.Opposites, 3),
-		Collocations: words(raw.Collocations, 4),
-		WordFamily:   words(raw.WordFamily, 4),
+		Collocations: words(raw.Collocations, 3),
+		WordFamily:   words(raw.WordFamily, 3),
 	}
 	if e.Headword == "" {
 		e.Headword = strings.TrimSpace(m.Text)
