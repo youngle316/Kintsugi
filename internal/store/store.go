@@ -59,6 +59,14 @@ var schema = []string{
 		explanation TEXT NOT NULL,
 		model TEXT NOT NULL DEFAULT ''
 	)`,
+	// What the user copied, for the clipboard panel: each text once.
+	`CREATE TABLE IF NOT EXISTS clips (
+		id INTEGER PRIMARY KEY,
+		text TEXT NOT NULL UNIQUE,
+		app TEXT NOT NULL DEFAULT '',
+		copied_at INTEGER NOT NULL
+	)`,
+	`CREATE INDEX IF NOT EXISTS clips_copied ON clips(copied_at)`,
 	`CREATE INDEX IF NOT EXISTS submissions_created ON submissions(created_at)`,
 	`CREATE INDEX IF NOT EXISTS lookups_headword ON lookups(headword COLLATE NOCASE)`,
 	`CREATE INDEX IF NOT EXISTS issues_submission ON issues(submission_id)`,

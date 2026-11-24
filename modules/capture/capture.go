@@ -91,6 +91,16 @@ type WriteResult struct {
 	Log      []string
 }
 
+// Clip is what the clipboard holds.
+type Clip struct {
+	Text string
+	// App is the app in front, most likely the one that copied.
+	App AppInfo
+	// Skip is true, with no Text, for what must not be kept: marked
+	// concealed, transient or generated, or left by this module itself.
+	Skip bool
+}
+
 var (
 	// ErrNotTrusted: the app lacks the Accessibility permission.
 	ErrNotTrusted = native.NewError("not_trusted")
@@ -118,4 +128,13 @@ type Capture interface {
 	// accessibility API, then with a simulated ⌘V, as opts allow. A paste
 	// restores the clipboard afterwards.
 	ReplaceSelection(text string, opts WriteOptions) (WriteResult, error)
+	// ReadClip reads the text the clipboard holds, for the history. While
+	// this module uses the clipboard itself, it waits.
+	ReadClip() (Clip, error)
+	// FrontApp is the app in front, to paste into later.
+	FrontApp() (AppInfo, error)
+	// PasteText brings the app with the process ID to the front and pastes
+	// text with a simulated ⌘V, then restores the clipboard. It leaves
+	// alone what GetSelectedText remembered.
+	PasteText(text string, pid int) (WriteResult, error)
 }

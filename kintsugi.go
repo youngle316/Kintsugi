@@ -36,6 +36,7 @@ type Kintsugi struct {
 	mu       sync.Mutex
 	shortcut string // the shortcut that checks
 	explain  string // the shortcut that explains
+	clipKey  string // the shortcut that opens the clipboard panel
 	panel    *mygo.Window
 	main     *mygo.Window
 	tray     *mygo.Tray
@@ -46,6 +47,15 @@ type Kintsugi struct {
 	// thread only.
 	view  mainState
 	board panelState
+
+	// The clipboard history. What follows clipMu is of the main thread.
+	clipChanged chan struct{}
+	clipMu      sync.Mutex // one change of the history at a time
+	clips       clipBoard
+	clipWin     *mygo.Window
+	clipTarget  int // the process ID to paste into
+	stopWatch   func()
+	pauseItem   *mygo.MenuItem
 }
 
 // Check is what the panel shows: a correction of the English the user
@@ -391,11 +401,16 @@ func (k *Kintsugi) OpenWindow(page string) {
 }
 
 func (k *Kintsugi) makePanel() {
+	k.panel = newPanel(k.panelView, func() bool { return k.board.pinned })
+}
+
+// newPanel makes a hidden panel that floats over the app in front.
+func newPanel(view func(*ui.Context), pinned func() bool) *mygo.Window {
 	p := mygo.NewWindow(mygo.WindowOptions{
 		Panel: true, Hidden: true, Frameless: true, Transparent: true,
 		Vibrancy: mygo.VibrancyHUD, CornerRadius: 14,
 		Width: 520, Height: 440, MinHeight: 160, MaxHeight: 640,
-		Content: ui.View(k.panelView),
+		Content: ui.View(view),
 	})
 	// Hide rather than close, so that it shows at once the next time; but
 	// a quit closes every window, and one kept open cancels it.
@@ -409,14 +424,14 @@ func (k *Kintsugi) makePanel() {
 		e.PreventDefault()
 		p.Hide()
 	})
-	// Gone as the user goes back to writing, unless pinned; the check
+	// Gone as the user goes back to writing, unless pinned; what it shows
 	// stays saved.
 	p.OnBlur(func() {
-		if !k.board.pinned {
+		if !pinned() {
 			p.Hide()
 		}
 	})
-	k.panel = p
+	return p
 }
 
 // showPanel shows the check near the caret, or the mouse; pinned, where
@@ -429,29 +444,34 @@ func (k *Kintsugi) showPanel(c *Check, caret *capture.Rect) {
 			p.Show()
 			return
 		}
-		w, h := p.Size()
-		pt := mygo.Screen.CursorScreenPoint()
-		x, y := pt.X+12, pt.Y+18
-		if caret != nil && caret.Height > 0 {
-			x, y = int(caret.X), int(caret.Y+caret.Height)+8
-		}
-		d := mygo.Screen.DisplayNearestPoint(mygo.Point{X: x, Y: y})
-		wa := d.WorkArea
-		if x+w > wa.X+wa.Width {
-			x = wa.X + wa.Width - w - 8
-		}
-		if y+h > wa.Y+wa.Height {
-			// Above the caret when there is no room under it.
-			if caret != nil {
-				y = int(caret.Y) - h - 8
-			} else {
-				y = wa.Y + wa.Height - h - 8
-			}
-		}
-		x, y = max(x, wa.X+8), max(y, wa.Y+8)
-		p.SetPosition(x, y)
+		place(p, caret)
 		p.Show()
 	})
+}
+
+// place moves a panel near the caret, or the mouse, on the screen.
+func place(p *mygo.Window, caret *capture.Rect) {
+	w, h := p.Size()
+	pt := mygo.Screen.CursorScreenPoint()
+	x, y := pt.X+12, pt.Y+18
+	if caret != nil && caret.Height > 0 {
+		x, y = int(caret.X), int(caret.Y+caret.Height)+8
+	}
+	d := mygo.Screen.DisplayNearestPoint(mygo.Point{X: x, Y: y})
+	wa := d.WorkArea
+	if x+w > wa.X+wa.Width {
+		x = wa.X + wa.Width - w - 8
+	}
+	if y+h > wa.Y+wa.Height {
+		// Above the caret when there is no room under it.
+		if caret != nil {
+			y = int(caret.Y) - h - 8
+		} else {
+			y = wa.Y + wa.Height - h - 8
+		}
+	}
+	x, y = max(x, wa.X+8), max(y, wa.Y+8)
+	p.SetPosition(x, y)
 }
 
 func (k *Kintsugi) hidePanel() {
@@ -459,6 +479,8 @@ func (k *Kintsugi) hidePanel() {
 }
 
 func (k *Kintsugi) makeTray() {
+	k.pauseItem = &mygo.MenuItem{Label: "Pause Recording", Type: mygo.MenuItemCheckbox, Checked: !k.settings.Get().RecordClipboard,
+		Click: func(it *mygo.MenuItem, _ *mygo.Window) { k.setRecording(!it.IsChecked()) }}
 	t, err := mygo.NewTray(mygo.TrayOptions{
 		ID:             "kintsugi",
 		Icon:           trayIcon(),
@@ -467,6 +489,9 @@ func (k *Kintsugi) makeTray() {
 		Menu: mygo.NewMenu([]*mygo.MenuItem{
 			{Label: "Check Selection", Click: func(*mygo.MenuItem, *mygo.Window) { go k.checkSelection() }},
 			{Label: "Explain Selection", Click: func(*mygo.MenuItem, *mygo.Window) { go k.explainSelection() }},
+			mygo.Separator(),
+			{Label: "Clipboard History", Click: func(*mygo.MenuItem, *mygo.Window) { go k.openClips() }},
+			k.pauseItem,
 			mygo.Separator(),
 			{Label: "Open Kintsugi", Click: func(*mygo.MenuItem, *mygo.Window) { go k.OpenWindow("overview") }},
 			{Label: "Mistakes", Click: func(*mygo.MenuItem, *mygo.Window) { go k.OpenWindow("mistakes") }},

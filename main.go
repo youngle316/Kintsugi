@@ -7,7 +7,8 @@
 // and every check is saved in SQLite (internal/store). The main window, a
 // window of native UI drawn with Lobe MyGo's components, shows the
 // statistics, the mistakes and the settings. A second shortcut explains, in
-// the same panel, English the user reads in plain English.
+// the same panel, English the user reads in plain English. A third opens the
+// clipboard panel, which pastes again what the user copied.
 package main
 
 import (
@@ -72,6 +73,7 @@ func (k *Kintsugi) start() error {
 	mygo.App.OnQuit(func() { k.db.Close() })
 
 	k.makePanel()
+	k.startClipboard()
 	k.makeTray()
 	s := k.settings.Get()
 	if err := k.registerShortcuts(s); err != nil {
@@ -83,25 +85,25 @@ func (k *Kintsugi) start() error {
 	return nil
 }
 
-// registerShortcuts makes s's shortcuts check and explain the selection,
-// in place of the ones before. When one fails, the ones before are kept;
+// registerShortcuts makes s's shortcuts check and explain the selection
+// and open the clipboard panel, in place of the ones before. When one fails, the ones before are kept;
 // at start, with none before, those that worked are kept.
 func (k *Kintsugi) registerShortcuts(s settings.Settings) error {
 	k.mu.Lock()
-	old := [2]string{k.shortcut, k.explain}
+	old := [3]string{k.shortcut, k.explain, k.clipKey}
 	k.mu.Unlock()
-	accels := [2]string{s.Shortcut, s.ExplainShortcut}
-	runs := [2]func(){k.checkSelection, k.explainSelection}
+	accels := [3]string{s.Shortcut, s.ExplainShortcut, s.ClipboardShortcut}
+	runs := [3]func(){k.checkSelection, k.explainSelection, k.openClips}
 	register := func(i int, accel string) error {
 		return mygo.GlobalShortcut.Register(accel, func() { go runs[i]() })
 	}
-	// All of them first, so that the two can swap.
+	// All of them first, so that they can swap.
 	for _, a := range old {
 		if a != "" {
 			mygo.GlobalShortcut.Unregister(a)
 		}
 	}
-	var ok [2]bool
+	var ok [3]bool
 	var errs []error
 	for i, a := range accels {
 		if err := register(i, a); err != nil {
@@ -131,7 +133,7 @@ func (k *Kintsugi) registerShortcuts(s settings.Settings) error {
 		}
 	}
 	k.mu.Lock()
-	k.shortcut, k.explain = cur[0], cur[1]
+	k.shortcut, k.explain, k.clipKey = cur[0], cur[1], cur[2]
 	k.mu.Unlock()
 	return errors.Join(errs...)
 }

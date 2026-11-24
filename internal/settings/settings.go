@@ -31,6 +31,10 @@ type Settings struct {
 	Shortcut     string   `json:"shortcut"`
 	// ExplainShortcut explains the selection in plain English.
 	ExplainShortcut string `json:"explainShortcut"`
+	// ClipboardShortcut opens the clipboard panel.
+	ClipboardShortcut string `json:"clipboardShortcut"`
+	// RecordClipboard keeps what the user copies.
+	RecordClipboard bool `json:"recordClipboard"`
 	// Onboarded is set once the first-run guide was finished or skipped.
 	Onboarded bool `json:"onboarded"`
 }
@@ -38,12 +42,14 @@ type Settings struct {
 // Defaults are the settings of a new install.
 func Defaults() Settings {
 	return Settings{
-		BaseURL:         llm.DefaultBaseURL,
-		CheckModel:      "deepseek-ai/DeepSeek-V4.1-Flash",
-		QualityModel:    "deepseek-ai/DeepSeek-V4-Pro",
-		Language:        LanguageZh,
-		Shortcut:        "Alt+Cmd+G",
-		ExplainShortcut: "Alt+Cmd+E",
+		BaseURL:           llm.DefaultBaseURL,
+		CheckModel:        "deepseek-ai/DeepSeek-V4.1-Flash",
+		QualityModel:      "deepseek-ai/DeepSeek-V4-Pro",
+		Language:          LanguageZh,
+		Shortcut:          "Alt+Cmd+G",
+		ExplainShortcut:   "Alt+Cmd+E",
+		ClipboardShortcut: "Ctrl+Cmd+V",
+		RecordClipboard:   true,
 	}
 }
 
@@ -54,6 +60,7 @@ func (s *Settings) Validate() error {
 	s.QualityModel = strings.TrimSpace(s.QualityModel)
 	s.Shortcut = strings.TrimSpace(s.Shortcut)
 	s.ExplainShortcut = strings.TrimSpace(s.ExplainShortcut)
+	s.ClipboardShortcut = strings.TrimSpace(s.ClipboardShortcut)
 	switch {
 	case !strings.HasPrefix(s.BaseURL, "https://") && !strings.HasPrefix(s.BaseURL, "http://"):
 		return errors.New("the API address must start with https://")
@@ -65,6 +72,10 @@ func (s *Settings) Validate() error {
 		return errors.New("choose a shortcut to explain")
 	case strings.EqualFold(s.ExplainShortcut, s.Shortcut):
 		return errors.New("checking and explaining need different shortcuts")
+	case s.ClipboardShortcut == "":
+		return errors.New("choose a shortcut for the clipboard history")
+	case strings.EqualFold(s.ClipboardShortcut, s.Shortcut), strings.EqualFold(s.ClipboardShortcut, s.ExplainShortcut):
+		return errors.New("the clipboard history needs a shortcut of its own")
 	}
 	if s.QualityModel == "" {
 		s.QualityModel = s.CheckModel
