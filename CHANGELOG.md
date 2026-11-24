@@ -3,6 +3,15 @@
 Each version's section is its release notes: the update window shows it,
 and the release workflow puts it on the GitHub release.
 
+## 0.6.0
+
+- Clipboard history: press ⌃⌘V in any app, then Enter or ⌘1 to ⌘9 pastes a
+  text you copied before; type to search, ⌘⌫ deletes.
+- Recording is on after updating. The last 200 texts are kept on this Mac,
+  unencrypted, and never sent. What apps mark as concealed or temporary is
+  left out. Pause it from the panel or the menu bar, or turn it off and
+  clear the history in Settings.
+
 ## 0.5.0
 
 - A simpler panel: its actions are icons at the top, with their names and
