@@ -3,6 +3,13 @@
 Each version's section is its release notes: the update window shows it,
 and the release workflow puts it on the GitHub release.
 
+## 0.7.0
+
+- Stuck on a word? Write it in Chinese and check as usual: Kintsugi fills in
+  the English that fits the sentence, with other ways to say it, when to use
+  them and an example. It is kept apart from your mistakes.
+- Text that is mostly Chinese is not translated: the panel says so.
+
 ## 0.6.2
 
 - ⌃⌘V opens the panel with the text you copied already in it: ⌘↩ checks it.
