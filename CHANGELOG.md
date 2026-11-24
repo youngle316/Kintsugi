@@ -3,6 +3,11 @@
 Each version's section is its release notes: the update window shows it,
 and the release workflow puts it on the GitHub release.
 
+## 0.6.2
+
+- ⌃⌘V opens the panel with the text you copied already in it: ⌘↩ checks it.
+- The panel's check is an icon only, as its other actions are.
+
 ## 0.6.1
 
 - Check text you paste, for apps whose selection cannot be read, such as
