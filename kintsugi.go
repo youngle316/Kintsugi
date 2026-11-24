@@ -36,7 +36,7 @@ type Kintsugi struct {
 	mu       sync.Mutex
 	shortcut string // the shortcut that checks
 	explain  string // the shortcut that explains
-	clipKey  string // the shortcut that opens the clipboard panel
+	paste    string // the shortcut that checks a pasted text
 	panel    *mygo.Window
 	main     *mygo.Window
 	tray     *mygo.Tray
@@ -47,15 +47,6 @@ type Kintsugi struct {
 	// thread only.
 	view  mainState
 	board panelState
-
-	// The clipboard history. What follows clipMu is of the main thread.
-	clipChanged chan struct{}
-	clipMu      sync.Mutex // one change of the history at a time
-	clips       clipBoard
-	clipWin     *mygo.Window
-	clipTarget  int // the process ID to paste into
-	stopWatch   func()
-	pauseItem   *mygo.MenuItem
 }
 
 // Check is what the panel shows: a correction of the English the user
@@ -63,7 +54,7 @@ type Kintsugi struct {
 type Check struct {
 	// Mode is modeCheck or modeExplain.
 	Mode string
-	// State is "loading", "done" or "error".
+	// State is stateCompose, "loading", "done" or "error".
 	State       string
 	ID          int64
 	Original    string
@@ -96,15 +87,10 @@ func (k *Kintsugi) checkSelection() { k.run(modeCheck) }
 func (k *Kintsugi) explainSelection() { k.run(modeExplain) }
 
 func (k *Kintsugi) run(mode string) {
-	k.mu.Lock()
-	if k.busy {
-		k.mu.Unlock()
+	if !k.begin() {
 		return
 	}
-	k.busy = true
-	k.mu.Unlock()
-	defer func() { k.mu.Lock(); k.busy = false; k.mu.Unlock() }()
-
+	defer k.end()
 	s := k.settings.Get()
 	c := &Check{Mode: mode, State: "loading", Language: string(s.Language)}
 	text, caret, err := k.read(c)
@@ -115,7 +101,29 @@ func (k *Kintsugi) run(mode string) {
 	}
 	c.Original = text
 	k.showPanel(c, caret)
+	k.process(c, s)
+}
 
+// begin starts a check, unless one is under way; end ends it.
+func (k *Kintsugi) begin() bool {
+	k.mu.Lock()
+	defer k.mu.Unlock()
+	if k.busy {
+		return false
+	}
+	k.busy = true
+	return true
+}
+
+func (k *Kintsugi) end() {
+	k.mu.Lock()
+	k.busy = false
+	k.mu.Unlock()
+}
+
+// process corrects or explains the text of c, saves it and shows it.
+func (k *Kintsugi) process(c *Check, s settings.Settings) {
+	text, mode := c.Original, c.Mode
 	key, _ := k.apiKey()
 	client := &llm.Client{BaseURL: s.BaseURL, APIKey: key}
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
@@ -401,16 +409,12 @@ func (k *Kintsugi) OpenWindow(page string) {
 }
 
 func (k *Kintsugi) makePanel() {
-	k.panel = newPanel(k.panelView, func() bool { return k.board.pinned })
-}
-
-// newPanel makes a hidden panel that floats over the app in front.
-func newPanel(view func(*ui.Context), pinned func() bool) *mygo.Window {
+	k.board.check = func(text string) { go k.checkPasted(text) }
 	p := mygo.NewWindow(mygo.WindowOptions{
 		Panel: true, Hidden: true, Frameless: true, Transparent: true,
 		Vibrancy: mygo.VibrancyHUD, CornerRadius: 14,
 		Width: 520, Height: 440, MinHeight: 160, MaxHeight: 640,
-		Content: ui.View(view),
+		Content: ui.View(k.panelView),
 	})
 	// Hide rather than close, so that it shows at once the next time; but
 	// a quit closes every window, and one kept open cancels it.
@@ -424,14 +428,15 @@ func newPanel(view func(*ui.Context), pinned func() bool) *mygo.Window {
 		e.PreventDefault()
 		p.Hide()
 	})
-	// Gone as the user goes back to writing, unless pinned; what it shows
+	// Gone as the user goes back to writing, unless pinned; the check
 	// stays saved.
 	p.OnBlur(func() {
-		if !pinned() {
+		// A text being pasted stays: the user may go and copy more.
+		if ch := k.Current(); !k.board.pinned && (ch == nil || ch.State != stateCompose) {
 			p.Hide()
 		}
 	})
-	return p
+	k.panel = p
 }
 
 // showPanel shows the check near the caret, or the mouse; pinned, where
@@ -449,7 +454,7 @@ func (k *Kintsugi) showPanel(c *Check, caret *capture.Rect) {
 	})
 }
 
-// place moves a panel near the caret, or the mouse, on the screen.
+// place moves the panel near the caret, or the mouse, on the screen.
 func place(p *mygo.Window, caret *capture.Rect) {
 	w, h := p.Size()
 	pt := mygo.Screen.CursorScreenPoint()
@@ -479,8 +484,6 @@ func (k *Kintsugi) hidePanel() {
 }
 
 func (k *Kintsugi) makeTray() {
-	k.pauseItem = &mygo.MenuItem{Label: "Pause Recording", Type: mygo.MenuItemCheckbox, Checked: !k.settings.Get().RecordClipboard,
-		Click: func(it *mygo.MenuItem, _ *mygo.Window) { k.setRecording(!it.IsChecked()) }}
 	t, err := mygo.NewTray(mygo.TrayOptions{
 		ID:             "kintsugi",
 		Icon:           trayIcon(),
@@ -489,9 +492,7 @@ func (k *Kintsugi) makeTray() {
 		Menu: mygo.NewMenu([]*mygo.MenuItem{
 			{Label: "Check Selection", Click: func(*mygo.MenuItem, *mygo.Window) { go k.checkSelection() }},
 			{Label: "Explain Selection", Click: func(*mygo.MenuItem, *mygo.Window) { go k.explainSelection() }},
-			mygo.Separator(),
-			{Label: "Clipboard History", Click: func(*mygo.MenuItem, *mygo.Window) { go k.openClips() }},
-			k.pauseItem,
+			{Label: "Check Pasted Text…", Click: func(*mygo.MenuItem, *mygo.Window) { go k.openPaste() }},
 			mygo.Separator(),
 			{Label: "Open Kintsugi", Click: func(*mygo.MenuItem, *mygo.Window) { go k.OpenWindow("overview") }},
 			{Label: "Mistakes", Click: func(*mygo.MenuItem, *mygo.Window) { go k.OpenWindow("mistakes") }},

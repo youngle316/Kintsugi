@@ -26,6 +26,10 @@ type panelState struct {
 	hot    int  // the issue under the pointer, -1 for none
 	busy   bool // an action is running
 	pinned bool // stays up when it loses the focus, where it was put
+
+	draft      string // the text being pasted, to check
+	focusDraft bool   // its field takes the focus in the next frame
+	check      func(text string)
 }
 
 // panelView builds the panel.
@@ -42,6 +46,10 @@ func (k *Kintsugi) panelView(c *ui.Context) {
 	if done && !explain {
 		c.OnShortcut(ui.Cmd, ui.KeyEnter, func() { k.act(replaceAction(ch)) })
 	}
+	compose := ch != nil && ch.State == stateCompose
+	if compose {
+		c.OnShortcut(ui.Cmd, ui.KeyEnter, k.submitDraft)
+	}
 	page := ui.Column(c).Fill().Padding(14, 16).Gap(10).DragWindow()
 	if !c.Vibrancy() {
 		page.Background(tk.BgElevated)
@@ -49,6 +57,8 @@ func (k *Kintsugi) panelView(c *ui.Context) {
 	page.Children(func() {
 		k.panelHeader(c, tk, ch)
 		switch {
+		case compose:
+			k.composer(c, tk)
 		case ch == nil || ch.State == "loading":
 			ui.Column(c).Grow(1).Center().Gap(10).Children(func() {
 				feedback.Spin(c, feedback.SpinProps{}, nil).AlignSelf(ui.Center)
@@ -236,7 +246,14 @@ func (k *Kintsugi) panelHeader(c *ui.Context, tk *theme.Tokens, ch *Check) {
 			return action.ActionIcon(c.Key(key), svg, p).Disabled(k.board.busy).Clicked()
 		}
 		switch {
+		case ch != nil && ch.State == stateCompose:
+			if icon("check", lucide.Check(), "Check (⌘↩)", action.ActionIconProps{Variant: action.ActionIconFilled}) {
+				k.submitDraft()
+			}
 		case ch != nil && ch.State == "error":
+			if ch.Method == methodPasted && icon("edit", lucide.Pencil(), "Edit the text", action.ActionIconProps{}) {
+				k.editDraft()
+			}
 			if icon("settings", lucide.Settings(), "Settings…", action.ActionIconProps{}) {
 				k.act("ignore")
 				go k.OpenWindow(pageSettings)
@@ -309,6 +326,9 @@ func (k *Kintsugi) act(what string) {
 		return
 	}
 	if ch == nil || ch.State != "done" || what == "ignore" {
+		if ch != nil && ch.State == stateCompose {
+			k.board.draft = ""
+		}
 		k.Dismiss()
 		return
 	}

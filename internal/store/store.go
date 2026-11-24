@@ -59,14 +59,6 @@ var schema = []string{
 		explanation TEXT NOT NULL,
 		model TEXT NOT NULL DEFAULT ''
 	)`,
-	// What the user copied, for the clipboard panel: each text once.
-	`CREATE TABLE IF NOT EXISTS clips (
-		id INTEGER PRIMARY KEY,
-		text TEXT NOT NULL UNIQUE,
-		app TEXT NOT NULL DEFAULT '',
-		copied_at INTEGER NOT NULL
-	)`,
-	`CREATE INDEX IF NOT EXISTS clips_copied ON clips(copied_at)`,
 	`CREATE INDEX IF NOT EXISTS submissions_created ON submissions(created_at)`,
 	`CREATE INDEX IF NOT EXISTS lookups_headword ON lookups(headword COLLATE NOCASE)`,
 	`CREATE INDEX IF NOT EXISTS issues_submission ON issues(submission_id)`,
@@ -86,7 +78,29 @@ func Open(ctx context.Context, path string) (*Store, error) {
 			return nil, fmt.Errorf("creating the tables: %w", err)
 		}
 	}
+	if err := eraseClips(ctx, db); err != nil {
+		db.Close()
+		return nil, fmt.Errorf("erasing the clipboard history: %w", err)
+	}
 	return &Store{db: db}, nil
+}
+
+// eraseClips erases the clipboard history 0.6.0 kept, from the free pages
+// and the log of the database too.
+func eraseClips(ctx context.Context, db *sqlite.DB) error {
+	rows, err := db.Query(ctx, `SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'clips'`)
+	if err != nil || len(rows.Values) == 0 {
+		return err
+	}
+	_, _ = db.Query(ctx, "PRAGMA secure_delete = ON")
+	if _, err := db.Execute(ctx, `DROP TABLE clips`); err != nil {
+		return err
+	}
+	if _, err := db.Execute(ctx, `VACUUM`); err != nil {
+		return err
+	}
+	_, err = db.Query(ctx, "PRAGMA wal_checkpoint(TRUNCATE)")
+	return err
 }
 
 // Close closes the database.

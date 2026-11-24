@@ -7,8 +7,8 @@
 // and every check is saved in SQLite (internal/store). The main window, a
 // window of native UI drawn with Lobe MyGo's components, shows the
 // statistics, the mistakes and the settings. A second shortcut explains, in
-// the same panel, English the user reads in plain English. A third opens the
-// clipboard panel, which pastes again what the user copied.
+// the same panel, English the user reads in plain English. A third checks a
+// text pasted into it.
 package main
 
 import (
@@ -73,7 +73,6 @@ func (k *Kintsugi) start() error {
 	mygo.App.OnQuit(func() { k.db.Close() })
 
 	k.makePanel()
-	k.startClipboard()
 	k.makeTray()
 	s := k.settings.Get()
 	if err := k.registerShortcuts(s); err != nil {
@@ -86,14 +85,14 @@ func (k *Kintsugi) start() error {
 }
 
 // registerShortcuts makes s's shortcuts check and explain the selection
-// and open the clipboard panel, in place of the ones before. When one fails, the ones before are kept;
+// and check a pasted text, in place of the ones before. When one fails, the ones before are kept;
 // at start, with none before, those that worked are kept.
 func (k *Kintsugi) registerShortcuts(s settings.Settings) error {
 	k.mu.Lock()
-	old := [3]string{k.shortcut, k.explain, k.clipKey}
+	old := [3]string{k.shortcut, k.explain, k.paste}
 	k.mu.Unlock()
-	accels := [3]string{s.Shortcut, s.ExplainShortcut, s.ClipboardShortcut}
-	runs := [3]func(){k.checkSelection, k.explainSelection, k.openClips}
+	accels := [3]string{s.Shortcut, s.ExplainShortcut, s.PasteShortcut}
+	runs := [3]func(){k.checkSelection, k.explainSelection, k.openPaste}
 	register := func(i int, accel string) error {
 		return mygo.GlobalShortcut.Register(accel, func() { go runs[i]() })
 	}
@@ -133,7 +132,7 @@ func (k *Kintsugi) registerShortcuts(s settings.Settings) error {
 		}
 	}
 	k.mu.Lock()
-	k.shortcut, k.explain, k.clipKey = cur[0], cur[1], cur[2]
+	k.shortcut, k.explain, k.paste = cur[0], cur[1], cur[2]
 	k.mu.Unlock()
 	return errors.Join(errs...)
 }

@@ -78,7 +78,7 @@ type mainState struct {
 	form          settings.Settings
 	hotkey        string // form.Shortcut, as display.Hotkey writes it
 	explainHotkey string // form.ExplainShortcut, the same way
-	clipHotkey    string // form.ClipboardShortcut, the same way
+	pasteHotkey   string // form.PasteShortcut, the same way
 	keyInput      string
 	login         bool
 	version       VersionInfo
@@ -141,7 +141,7 @@ func (k *Kintsugi) load() {
 				v.err = err.Error()
 			}
 			if page == pageSettings && !v.formReady {
-				v.form, v.hotkey, v.explainHotkey, v.clipHotkey, v.login, v.version, v.formReady = s, toHotkey(s.Shortcut), toHotkey(s.ExplainShortcut), toHotkey(s.ClipboardShortcut), login, k.Version(), true
+				v.form, v.hotkey, v.explainHotkey, v.pasteHotkey, v.login, v.version, v.formReady = s, toHotkey(s.Shortcut), toHotkey(s.ExplainShortcut), toHotkey(s.PasteShortcut), login, k.Version(), true
 			}
 		})
 	}()
@@ -583,6 +583,9 @@ func (k *Kintsugi) settingsPage(c *ui.Context, tk *theme.Tokens) {
 		settingRow(c, "Explain in plain English", func() {
 			field.HotkeyInput(c.Key("explain-shortcut"), &v.explainHotkey, field.HotkeyInputProps{ResetValue: "mod+alt+e", Platform: display.HotkeyApple})
 		})
+		settingRow(c, "Check pasted text", func() {
+			field.HotkeyInput(c.Key("paste-shortcut"), &v.pasteHotkey, field.HotkeyInputProps{ResetValue: "mod+ctrl+v", Platform: display.HotkeyApple})
+		})
 		settingRow(c, "Open at login", func() {
 			login := v.login
 			choice.Switch(c.Key("login"), &v.login, choice.SwitchProps{}).Label("Open at login")
@@ -591,24 +594,6 @@ func (k *Kintsugi) settingsPage(c *ui.Context, tk *theme.Tokens) {
 					v.login = login
 					v.status, v.statusErr = err.Error(), true
 				}
-			}
-		})
-	})
-	section(c, tk, "Clipboard", "", func() {
-		settingRow(c, "Clipboard history", func() {
-			field.HotkeyInput(c.Key("clip-shortcut"), &v.clipHotkey, field.HotkeyInputProps{ResetValue: "mod+ctrl+v", Platform: display.HotkeyApple})
-		})
-		settingRow(c, "Record what you copy", func() {
-			on := f.RecordClipboard
-			choice.Switch(c.Key("record-clipboard"), &f.RecordClipboard, choice.SwitchProps{}).Label("Record what you copy")
-			if on != f.RecordClipboard {
-				k.setRecording(f.RecordClipboard)
-			}
-		})
-		ui.Row(c).Gap(12).AlignItems(ui.Center).Children(func() {
-			display.Text(c, "The last 200 texts, kept unencrypted on this Mac and never sent.", display.TextProps{Type: display.TextSecondary, FontSize: tk.FontSizeSM}).Grow(1).Basis(0)
-			if action.Button(c, "Clear history…", action.ButtonProps{}).Clicked() {
-				k.confirmClear()
 			}
 		})
 	})
@@ -665,43 +650,19 @@ func settingRow(c *ui.Context, label string, control func()) {
 	})
 }
 
-// confirmClear asks, then empties the clipboard history.
-func (k *Kintsugi) confirmClear() {
-	v, win := &k.view, k.main
-	go func() {
-		res, err := mygo.Dialog.Message(mygo.MessageOptions{
-			Parent: win, Type: mygo.MessageWarning, Message: "Clear the clipboard history?",
-			Detail:  "Every text Kintsugi kept is deleted. This cannot be undone.",
-			Buttons: []string{"Cancel", "Clear"}, DefaultButton: 0, CancelButton: 0, DestructiveButtons: []int{1},
-		})
-		if err == nil && res.Button != 1 {
-			return
-		}
-		if err == nil {
-			err = k.ClearClips()
-		}
-		win.Update(func() {
-			v.status, v.statusErr = "Clipboard history cleared", false
-			if err != nil {
-				v.status, v.statusErr = err.Error(), true
-			}
-		})
-	}()
-}
-
 // saveForm saves the settings page.
 func (k *Kintsugi) saveForm() {
 	v := &k.view
 	f := v.form
 	f.Shortcut = toAccel(v.hotkey)
 	f.ExplainShortcut = toAccel(v.explainHotkey)
-	f.ClipboardShortcut = toAccel(v.clipHotkey)
+	f.PasteShortcut = toAccel(v.pasteHotkey)
 	s, err := k.SaveSettings(f)
 	if err != nil {
 		v.status, v.statusErr = err.Error(), true
 		return
 	}
-	v.form, v.settings, v.hotkey, v.explainHotkey, v.clipHotkey, v.status, v.statusErr = s, s, toHotkey(s.Shortcut), toHotkey(s.ExplainShortcut), toHotkey(s.ClipboardShortcut), "Saved", false
+	v.form, v.settings, v.hotkey, v.explainHotkey, v.pasteHotkey, v.status, v.statusErr = s, s, toHotkey(s.Shortcut), toHotkey(s.ExplainShortcut), toHotkey(s.PasteShortcut), "Saved", false
 }
 
 // saveKey keeps the API key in the Keychain off the main thread; an empty
