@@ -3,6 +3,14 @@
 Each version's section is its release notes: the update window shows it,
 and the release workflow puts it on the GitHub release.
 
+## 0.6.1
+
+- Check text you paste, for apps whose selection cannot be read, such as
+  Claude Code in a terminal: press ⌃⌘V, paste, then ⌘↩ checks it. ⌘↩ again
+  copies the corrected text.
+- The clipboard history of 0.6.0 is gone: nothing you copy is recorded, and
+  what it kept is erased when Kintsugi starts.
+
 ## 0.6.0
 
 - Clipboard history: press ⌃⌘V in any app, then Enter or ⌘1 to ⌘9 pastes a
