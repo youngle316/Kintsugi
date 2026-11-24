@@ -5,11 +5,11 @@ package main
 
 import (
 	"strings"
+	"unicode/utf8"
 
 	"github.com/egoist/mygo"
 	"github.com/egoist/mygo/ui"
 	"github.com/lobehub/lobe-mygo/pkg/field"
-	"github.com/lobehub/lobe-mygo/pkg/theme"
 )
 
 // stateCompose is the state of a Check whose text the user is pasting.
@@ -18,11 +18,21 @@ const stateCompose = "compose"
 // methodPasted is the capture method of a text pasted into the panel.
 const methodPasted = "pasted"
 
-// compose has the panel take a text, an empty one unless one is being
-// pasted already. It runs on the main thread.
-func (k *Kintsugi) compose() {
+// compose has the panel take a text, beginning with clip, what the user
+// copied. A draft stays when nothing new was copied since it was filled.
+// It runs on the main thread.
+func (k *Kintsugi) compose(clip string) {
+	b := &k.board
 	if ch := k.Current(); ch == nil || ch.State != stateCompose {
-		k.board.draft = ""
+		b.draft = ""
+	}
+	blank := strings.TrimSpace(clip) == ""
+	switch {
+	case b.draft != "" && (blank || clip == b.filled):
+	case blank:
+		b.draft, b.filled = "", ""
+	default:
+		b.draft, b.filled = clip, clip
 	}
 	k.editDraft()
 }
@@ -35,7 +45,7 @@ func (k *Kintsugi) editDraft() {
 	k.mu.Unlock()
 }
 
-// openPaste shows the panel to paste a text into, or the check under way.
+// openPaste shows the panel with the text the user copied, to check, or the check under way.
 func (k *Kintsugi) openPaste() {
 	mygo.RunOnMain(func() {
 		k.mu.Lock()
@@ -43,7 +53,7 @@ func (k *Kintsugi) openPaste() {
 		k.mu.Unlock()
 		visible := k.panel.IsVisible()
 		if !busy {
-			k.compose()
+			k.compose(mygo.Clipboard.ReadText())
 		}
 		k.panel.Update(func() {})
 		if !visible && !k.board.pinned {
@@ -67,15 +77,16 @@ func (k *Kintsugi) checkPasted(text string) {
 }
 
 // composer is the field to paste into.
-func (k *Kintsugi) composer(c *ui.Context, tk *theme.Tokens) {
+func (k *Kintsugi) composer(c *ui.Context) {
 	in := field.TextArea(c.Key("draft"), &k.board.draft, field.TextAreaProps{
-		Placeholder: "Paste English to check (⌘V)", MinRows: 18, MaxRows: 18,
+		Placeholder: "Paste English to check (⌘V)", MinRows: 20, MaxRows: 20,
 	}).Label("Text to check")
 	if k.board.focusDraft {
 		in.Focus()
+		end := utf8.RuneCountInString(k.board.draft)
+		in.SetTextSelection(end, end)
 		k.board.focusDraft = false
 	}
-	ui.Text(c, "⌘↩ Check").FontSize(tk.FontSizeSM).TextColor(tk.TextTertiary)
 }
 
 // submitDraft checks the draft, unless it is blank.

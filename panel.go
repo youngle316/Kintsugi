@@ -28,6 +28,7 @@ type panelState struct {
 	pinned bool // stays up when it loses the focus, where it was put
 
 	draft      string // the text being pasted, to check
+	filled     string // the clipboard the draft was filled with
 	focusDraft bool   // its field takes the focus in the next frame
 	check      func(text string)
 }
@@ -58,7 +59,7 @@ func (k *Kintsugi) panelView(c *ui.Context) {
 		k.panelHeader(c, tk, ch)
 		switch {
 		case compose:
-			k.composer(c, tk)
+			k.composer(c)
 		case ch == nil || ch.State == "loading":
 			ui.Column(c).Grow(1).Center().Gap(10).Children(func() {
 				feedback.Spin(c, feedback.SpinProps{}, nil).AlignSelf(ui.Center)

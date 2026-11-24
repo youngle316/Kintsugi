@@ -12,7 +12,7 @@ func pasteTester(t *testing.T) (*ui.Tester, *Kintsugi, *[]string) {
 	k := &Kintsugi{}
 	var checked []string
 	k.board.check = func(text string) { checked = append(checked, text) }
-	k.compose()
+	k.compose("")
 	return ui.NewTester(k.panelView, 520, 440), k, &checked
 }
 
@@ -45,18 +45,40 @@ func TestBlankTextIsNotChecked(t *testing.T) {
 	}
 }
 
-func TestComposingAgainKeepsAnUncheckedDraftOnly(t *testing.T) {
-	k := &Kintsugi{}
-	k.compose()
-	k.board.draft = "half"
-	k.compose()
-	if k.board.draft != "half" {
-		t.Errorf("an unchecked draft became %q", k.board.draft)
+func TestPanelOpensWithTheClipboard(t *testing.T) {
+	tt, k, checked := pasteTester(t)
+	k.compose("She go home.")
+	tt.Frame()
+	tt.Type(" Now.")
+	tt.Key(ui.Cmd, ui.KeyEnter)
+	if len(*checked) != 1 || (*checked)[0] != "She go home. Now." {
+		t.Fatalf("%q", *checked)
 	}
-	k.current.State = "done"
-	k.compose()
-	if k.board.draft != "" || k.Current().State != stateCompose {
-		t.Errorf("draft %q, state %q", k.board.draft, k.Current().State)
+}
+
+func TestComposingAgain(t *testing.T) {
+	for _, c := range []struct{ name, draft, state, clip, want string }{
+		{"the same clipboard keeps the edits", "old, edited", stateCompose, "old", "old, edited"},
+		{"a new copy replaces the draft", "old, edited", stateCompose, "new", "new"},
+		{"an empty clipboard keeps the draft", "old, edited", stateCompose, " ", "old, edited"},
+		{"a closed panel fills again", "", stateCompose, "old", "old"},
+		{"after a check it starts over", "old, edited", "done", "old", "old"},
+		{"after a check, nothing copied", "old, edited", "done", "", ""},
+	} {
+		k := &Kintsugi{}
+		k.compose("old")
+		k.board.draft, k.current.State = c.draft, c.state
+		k.compose(c.clip)
+		if k.board.draft != c.want || k.Current().State != stateCompose {
+			t.Errorf("%s: %q", c.name, k.board.draft)
+		}
+	}
+}
+
+func TestComposerHasNoFooterText(t *testing.T) {
+	tt, _, _ := pasteTester(t)
+	if tt.HasText("⌘↩ Check") {
+		t.Error("the footer is back")
 	}
 }
 
