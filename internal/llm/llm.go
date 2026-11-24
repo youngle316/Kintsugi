@@ -38,14 +38,31 @@ type Issue struct {
 	Sentence      string `json:"sentence"`
 }
 
+// Gap is Chinese the user wrote where they did not know the English, and
+// the English that fills it. It is not a mistake.
+type Gap struct {
+	Original  string `json:"original"` // the Chinese
+	Corrected string `json:"corrected"`
+	// Alternatives are other ways to say it; the notes tell them apart.
+	Alternatives []string `json:"alternatives"`
+	NoteZh       string   `json:"noteZh"`
+	NoteEn       string   `json:"noteEn"`
+	Example      string   `json:"example"`
+	Sentence     string   `json:"sentence"`
+}
+
 // Result is the model's correction of a text.
 type Result struct {
 	CorrectedText string  `json:"correctedText"`
 	Issues        []Issue `json:"issues"`
+	Gaps          []Gap   `json:"gaps"`
 	Model         string  `json:"model"`
 	// WordCount counts the words of the text, leaving out code.
 	WordCount int `json:"wordCount"`
 }
+
+// Changed reports whether there is anything to review: a mistake or a gap.
+func (r *Result) Changed() bool { return len(r.Issues) > 0 || len(r.Gaps) > 0 }
 
 // Client calls a chat model.
 type Client struct {
@@ -56,6 +73,12 @@ type Client struct {
 
 // ErrNoAPIKey means the client has no API key.
 var ErrNoAPIKey = errors.New("no SiliconFlow API key: add one in Settings")
+
+// ErrMostlyChinese means the text is Chinese to translate, rather than
+// English with words missing.
+var ErrMostlyChinese = errors.New("this is mostly Chinese, and Kintsugi does not translate: write it in English first, with Chinese only for the words you are stuck on")
+
+var errUnfilled = errors.New("the model left Chinese in the text")
 
 // APIError is an error the API answered with.
 type APIError struct {
@@ -70,7 +93,8 @@ func (e *APIError) Error() string {
 const systemPrompt = `You are an English writing tutor for a native Chinese speaker who writes
 technical messages to AI coding tools.
 
-Task: find mistakes in the user's text and return JSON only.
+Task: find mistakes in the user's text, fill in the English for words they
+left in Chinese, and return JSON only.
 
 Rules:
 - Keep the user's meaning and tone. Do not rewrite for style unless it is
@@ -88,7 +112,27 @@ Rules:
   exactly from the text and from corrected_text.
 - sentence is the whole sentence of the user's text the issue is in.
 - When there is nothing to fix, corrected_text is the text unchanged and
-  issues is [].
+  issues and gaps are [].
+
+Gaps: where the user does not know the English, they write Chinese in the
+middle of their English. Put the English that fits the sentence in its place
+in corrected_text, and change nothing else because of it; the rest of the
+text gets the same check as ever. Each gap:
+- original: the Chinese, copied exactly; corrected: the English in its
+  place, copied exactly from corrected_text, as short as a writer of this
+  sentence would say it.
+- alternatives: up to 3 other English words or phrases that fit this
+  sentence, or [].
+- note_zh: one sentence in Simplified Chinese on how corrected differs from
+  the alternatives, or when to use it; note_en: the same in English.
+- example: one new, everyday English sentence that uses corrected.
+- sentence: the whole sentence of the user's text the gap is in.
+A gap is not a mistake: never list it in issues. Grammar the user wrote
+wrong around it still is an issue.
+Keep Chinese inside quotation marks or brackets such as 「」 as it is, like
+the name of a button: it is quoted, and not a gap. Write a Chinese person's
+name in pinyin. When the whole text is a Chinese word or phrase, it is one
+gap, and corrected_text is only its English.
 
 Output:
 {
@@ -102,6 +146,17 @@ Output:
       "severity": "error|suggestion",
       "explanation_zh": "...",
       "explanation_en": "...",
+      "sentence": "..."
+    }
+  ],
+  "gaps": [
+    {
+      "original": "...",
+      "corrected": "...",
+      "alternatives": ["..."],
+      "note_zh": "...",
+      "note_en": "...",
+      "example": "...",
       "sentence": "..."
     }
   ]
@@ -137,18 +192,32 @@ type response struct {
 // Check corrects text with model. Code in it (fenced blocks, backticks,
 // URLs and paths) is replaced by placeholders the model must keep, and put
 // back in the result, so it is neither sent as prose nor changed. An answer
-// that is not valid JSON, or loses a placeholder, is asked for once more.
+// that is not valid JSON, or loses a placeholder, is asked for once more;
+// so is one that leaves Chinese unfilled, which is taken if it is all there
+// is. A text that is mostly Chinese is ErrMostlyChinese.
 func (c *Client) Check(ctx context.Context, text, model string) (Result, error) {
 	if c.APIKey == "" {
 		return Result{}, ErrNoAPIKey
 	}
 	m := Mask(text)
+	if mostlyChinese(m.Text) {
+		return Result{}, ErrMostlyChinese
+	}
+	toFill := hasHan(unquoted(m.Text))
 	var res Result
-	err := c.ask(ctx, model, Prompt(), m.Text, func(content string) (err error) {
-		res, err = Parse(content, m)
-		return err
+	answered := false
+	err := c.ask(ctx, model, Prompt(), m.Text, func(content string) error {
+		r, err := Parse(content, m)
+		if err != nil {
+			return err
+		}
+		res, answered = r, true
+		if toFill && (len(r.Gaps) == 0 || hasHan(unquoted(Mask(r.CorrectedText).Text))) {
+			return errUnfilled
+		}
+		return nil
 	})
-	if err != nil {
+	if err != nil && !answered {
 		return Result{}, err
 	}
 	res.Model = model

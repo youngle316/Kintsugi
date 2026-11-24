@@ -47,6 +47,19 @@ var schema = []string{
 		explanation_en TEXT NOT NULL DEFAULT '',
 		sentence TEXT NOT NULL DEFAULT ''
 	)`,
+	// Chinese the user wrote for want of the English, and what filled it:
+	// not mistakes. alternatives is a JSON list.
+	`CREATE TABLE IF NOT EXISTS gaps (
+		id INTEGER PRIMARY KEY,
+		submission_id INTEGER NOT NULL REFERENCES submissions(id) ON DELETE CASCADE,
+		span_original TEXT NOT NULL,
+		span_corrected TEXT NOT NULL,
+		alternatives TEXT NOT NULL DEFAULT '[]',
+		note_zh TEXT NOT NULL DEFAULT '',
+		note_en TEXT NOT NULL DEFAULT '',
+		example TEXT NOT NULL DEFAULT '',
+		sentence TEXT NOT NULL DEFAULT ''
+	)`,
 	// One row per explanation, kept for a vocabulary book: headword is the
 	// entry's of a word or phrase, '' for a text; explanation is the whole
 	// llm.Explanation as JSON.
@@ -62,6 +75,7 @@ var schema = []string{
 	`CREATE INDEX IF NOT EXISTS submissions_created ON submissions(created_at)`,
 	`CREATE INDEX IF NOT EXISTS lookups_headword ON lookups(headword COLLATE NOCASE)`,
 	`CREATE INDEX IF NOT EXISTS issues_submission ON issues(submission_id)`,
+	`CREATE INDEX IF NOT EXISTS gaps_submission ON gaps(submission_id)`,
 	`CREATE INDEX IF NOT EXISTS issues_pattern ON issues(pattern)`,
 }
 
@@ -115,7 +129,7 @@ type Submission struct {
 	Result        llm.Result
 }
 
-// Save stores a check and its issues, and returns its ID.
+// Save stores a check with its issues and gaps, and returns its ID.
 func (s *Store) Save(ctx context.Context, sub Submission) (int64, error) {
 	if sub.Action == "" {
 		sub.Action = ActionIgnored
@@ -133,6 +147,17 @@ func (s *Store) Save(ctx context.Context, sub Submission) (int64, error) {
 			SQL: `INSERT INTO issues (submission_id, span_original, span_corrected, category, pattern, severity,
 				explanation_zh, explanation_en, sentence) VALUES ((SELECT MAX(id) FROM submissions), ?, ?, ?, ?, ?, ?, ?, ?)`,
 			Args: []any{is.Original, is.Corrected, is.Category, is.Pattern, is.Severity, is.ExplanationZh, is.ExplanationEn, is.Sentence},
+		})
+	}
+	for _, g := range sub.Result.Gaps {
+		alternatives, err := json.Marshal(g.Alternatives)
+		if err != nil {
+			return 0, err
+		}
+		stmts = append(stmts, sqlite.Statement{
+			SQL: `INSERT INTO gaps (submission_id, span_original, span_corrected, alternatives, note_zh, note_en, example, sentence)
+				VALUES ((SELECT MAX(id) FROM submissions), ?, ?, ?, ?, ?, ?, ?)`,
+			Args: []any{g.Original, g.Corrected, string(alternatives), g.NoteZh, g.NoteEn, g.Example, g.Sentence},
 		})
 	}
 	res, err := s.db.Transaction(ctx, stmts)

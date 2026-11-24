@@ -80,6 +80,15 @@ type rawAnswer struct {
 		ExplanationEn string `json:"explanation_en"`
 		Sentence      string `json:"sentence"`
 	} `json:"issues"`
+	Gaps []struct {
+		Original     string   `json:"original"`
+		Corrected    string   `json:"corrected"`
+		Alternatives []string `json:"alternatives"`
+		NoteZh       string   `json:"note_zh"`
+		NoteEn       string   `json:"note_en"`
+		Example      string   `json:"example"`
+		Sentence     string   `json:"sentence"`
+	} `json:"gaps"`
 }
 
 // Parse reads the model's answer to the check of m.
@@ -96,7 +105,27 @@ func Parse(content string, m Masked) (Result, error) {
 		return Result{}, fmt.Errorf("the model dropped code from the text (%s)", strings.Join(missing, ", "))
 	}
 	original, _ := m.unmask(m.Text)
-	res := Result{CorrectedText: keepEdges(original, corrected), Issues: []Issue{}}
+	res := Result{CorrectedText: keepEdges(original, corrected), Issues: []Issue{}, Gaps: []Gap{}}
+	for _, rg := range raw.Gaps {
+		g := Gap{
+			Original:     strings.TrimSpace(rg.Original),
+			Corrected:    strings.TrimSpace(rg.Corrected),
+			Alternatives: []string{},
+			NoteZh:       strings.TrimSpace(rg.NoteZh),
+			NoteEn:       strings.TrimSpace(rg.NoteEn),
+			Example:      strings.TrimSpace(rg.Example),
+		}
+		g.Sentence, _ = m.unmask(strings.TrimSpace(rg.Sentence))
+		if !hasHan(g.Original) || g.Corrected == "" || hasHan(g.Corrected) {
+			continue
+		}
+		for _, a := range words(rg.Alternatives, len(rg.Alternatives)) {
+			if !strings.EqualFold(a, g.Corrected) && len(g.Alternatives) < 3 {
+				g.Alternatives = append(g.Alternatives, a)
+			}
+		}
+		res.Gaps = append(res.Gaps, g)
+	}
 	for _, ri := range raw.Issues {
 		is := Issue{
 			Category:      NormalizeCategory(ri.Category),
@@ -121,12 +150,20 @@ func Parse(content string, m Masked) (Result, error) {
 		if is.Original == is.Corrected {
 			continue // nothing changed: not an issue
 		}
+		if hasHan(is.Original) && is.Corrected != "" && !hasHan(is.Corrected) {
+			// A gap the model took for a mistake, maybe beside the gap itself.
+			if !hasGap(res.Gaps, is.Original) {
+				res.Gaps = append(res.Gaps, Gap{Original: is.Original, Corrected: is.Corrected, Alternatives: []string{},
+					NoteZh: is.ExplanationZh, NoteEn: is.ExplanationEn, Sentence: is.Sentence})
+			}
+			continue
+		}
 		if is.Pattern == "" {
 			is.Pattern = NormalizePattern(is.Original + " -> " + is.Corrected)
 		}
 		res.Issues = append(res.Issues, is)
 	}
-	if len(res.Issues) == 0 && strings.TrimSpace(corrected) != strings.TrimSpace(original) {
+	if !res.Changed() && strings.TrimSpace(corrected) != strings.TrimSpace(original) {
 		// Changes without issues would be fixes nobody learns from, and a
 		// replacement the user can't review: keep the text.
 		res.CorrectedText = original
@@ -199,14 +236,15 @@ func NormalizePattern(p string) string {
 	return strings.Trim(strings.TrimSpace(p), ".")
 }
 
-// CountWords counts the words of a masked text, leaving out placeholders.
+// CountWords counts the English words of a masked text, leaving out
+// placeholders and Chinese.
 func CountWords(masked string) int {
 	n := 0
 	for _, f := range strings.Fields(masked) {
 		if strings.HasPrefix(f, "⟦C") {
 			continue
 		}
-		if strings.IndexFunc(f, func(r rune) bool { return unicode.IsLetter(r) || unicode.IsDigit(r) }) >= 0 {
+		if strings.IndexFunc(f, func(r rune) bool { return (unicode.IsLetter(r) || unicode.IsDigit(r)) && !unicode.Is(unicode.Han, r) }) >= 0 {
 			n++
 		}
 	}
@@ -215,4 +253,30 @@ func CountWords(masked string) int {
 
 func hasHan(s string) bool {
 	return strings.IndexFunc(s, func(r rune) bool { return unicode.Is(unicode.Han, r) }) >= 0
+}
+
+// hasGap reports whether a gap of gaps is in span.
+func hasGap(gaps []Gap, span string) bool {
+	return slices.ContainsFunc(gaps, func(g Gap) bool { return strings.Contains(span, g.Original) })
+}
+
+// quoted finds text in quotation marks; not in straight single ones, which
+// are apostrophes too.
+var quoted = regexp.MustCompile(`"[^"\n]*"|“[^”\n]*”|‘[^’\n]*’|「[^」\n]*」|『[^』\n]*』`)
+
+// unquoted is s without the text in quotation marks, whose Chinese stays.
+func unquoted(s string) string { return quoted.ReplaceAllString(s, " ") }
+
+var (
+	han          = regexp.MustCompile(`\p{Han}`)
+	latinWords   = regexp.MustCompile(`[A-Za-z][A-Za-z'’-]*`)
+	placeholders = regexp.MustCompile(`⟦C\d+⟧`)
+)
+
+// mostlyChinese reports whether a masked text is Chinese to translate: more
+// than a phrase of it, with few English words among it.
+func mostlyChinese(masked string) bool {
+	s := placeholders.ReplaceAllString(unquoted(masked), " ")
+	n := len(han.FindAllString(s, -1))
+	return n > 12 && n > 4*len(latinWords.FindAllString(s, -1))
 }

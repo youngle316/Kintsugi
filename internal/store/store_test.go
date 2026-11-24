@@ -79,6 +79,41 @@ func TestSaveAndCount(t *testing.T) {
 	}
 }
 
+func TestSaveGaps(t *testing.T) {
+	ctx := context.Background()
+	s, err := Open(ctx, filepath.Join(t.TempDir(), "k.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	if _, err := s.Save(ctx, Submission{CreatedAt: time.Now(), OriginalText: "x", Result: llm.Result{WordCount: 2}}); err != nil {
+		t.Fatal(err)
+	}
+	id, err := s.Save(ctx, Submission{CreatedAt: time.Now(), OriginalText: "Don't 挡住 it.", Result: llm.Result{WordCount: 2,
+		Gaps: []llm.Gap{{Original: "挡住", Corrected: "cover", Alternatives: []string{"block"}, NoteZh: "区别", NoteEn: "d", Example: "e", Sentence: "s"}}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	rows, err := s.db.Query(ctx, `SELECT submission_id, span_original, span_corrected, alternatives, note_zh, note_en, example, sentence FROM gaps`)
+	if err != nil || len(rows.Values) != 1 {
+		t.Fatalf("%v, %v", rows, err)
+	}
+	v := rows.Values[0]
+	if i64(v[0]) != id {
+		t.Errorf("submission %v, want %d", v[0], id)
+	}
+	for i, want := range []string{"挡住", "cover", `["block"]`, "区别", "d", "e", "s"} {
+		if str(v[i+1]) != want {
+			t.Errorf("column %d = %v, want %q", i+1, v[i+1], want)
+		}
+	}
+	// A word filled in is not a mistake.
+	o, err := s.Overview(ctx, time.Time{})
+	if err != nil || o.CleanChecks != 2 || o.Errors+o.Suggestions != 0 {
+		t.Errorf("overview = %+v, %v", o, err)
+	}
+}
+
 func TestSaveLookup(t *testing.T) {
 	ctx := context.Background()
 	s, err := Open(ctx, filepath.Join(t.TempDir(), "k.db"))

@@ -9,6 +9,7 @@ package main
 import (
 	"fmt"
 	"log"
+	"slices"
 	"strings"
 
 	"github.com/egoist/mygo/ui"
@@ -23,7 +24,7 @@ import (
 
 // panelState is what the panel shows beside the check.
 type panelState struct {
-	hot    int  // the issue under the pointer, -1 for none
+	hot    int  // the gap or issue under the pointer, -1 for none
 	busy   bool // an action is running
 	pinned bool // stays up when it loses the focus, where it was put
 
@@ -82,7 +83,7 @@ func (k *Kintsugi) panelView(c *ui.Context) {
 			})
 		case explain:
 			explained(c, tk, ch.Explanation)
-		case len(ch.Result.Issues) == 0:
+		case !ch.Result.Changed():
 			ui.Column(c).Grow(1).Center().Children(func() {
 				feedback.Result(c, feedback.ResultProps{Status: feedback.ResultSuccess, Title: "Looks good", SubTitle: "No mistakes found."})
 			})
@@ -198,25 +199,39 @@ func explanationText(ex *llm.Explanation) string {
 	return b.String()
 }
 
-// corrections shows the corrected text with each issue marked, and the
-// issues explained.
+// corrections shows the corrected text with each gap and issue marked, and
+// the gaps, then the issues, explained.
 func (k *Kintsugi) corrections(c *ui.Context, tk *theme.Tokens, ch *Check) {
 	res := ch.Result
 	lang := settings.Language(ch.Language)
 	ui.Scroll(c.Key("issues")).Grow(1).Basis(0).Children(func() {
 		ui.Column(c).Gap(10).Children(func() {
 			ui.Box(c).Padding(10, 12).Radius(tk.BorderRadiusLG).Background(tk.FillQuaternary).Border(1, tk.BorderSecondary).Children(func() {
-				ui.RichText(c, highlight(tk, res.CorrectedText, res.Issues, k.board.hot)...).Selectable().LineHeight(1.6)
+				ui.RichText(c, highlight(tk, res, k.board.hot)...).Selectable().LineHeight(1.6)
 			})
+			for i, g := range res.Gaps {
+				k.markedRow(c, tk, "gap", i, i, func() {
+					ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
+						ui.Image(c, lucide.Languages()).Width(14).Height(14).TextColor(tk.Info).Tooltip("Word filled in").Label("Word filled in")
+						label := "补词"
+						if lang == settings.LanguageEn {
+							label = "Word filled in"
+						}
+						ui.Text(c, label).FontSize(tk.FontSizeSM).TextColor(tk.TextTertiary)
+					})
+					ui.RichText(c, ui.Span{Text: g.Original, Color: tk.TextSecondary}, ui.Span{Text: "  →  ", Color: tk.TextQuaternary},
+						ui.Span{Text: g.Corrected, Color: tk.Info, Weight: 600})
+					related(c, tk, lucide.EqualApproximately(), "Other ways to say it", g.Alternatives)
+					if note := explanation(lang, g.NoteZh, g.NoteEn); note != "" {
+						ui.Text(c, note).FontSize(tk.FontSizeSM).TextColor(tk.TextSecondary)
+					}
+					if g.Example != "" {
+						ui.Text(c, "“"+g.Example+"”").FontSize(tk.FontSizeSM).Italic().TextColor(tk.TextTertiary)
+					}
+				})
+			}
 			for i, is := range res.Issues {
-				row := ui.Column(c.Key(i)).Gap(4).Padding(8, 10).Radius(tk.BorderRadius)
-				if row.Hovered() {
-					row.Background(tk.FillQuaternary)
-					k.board.hot = i
-				} else if k.board.hot == i {
-					k.board.hot = -1
-				}
-				row.Children(func() {
+				k.markedRow(c, tk, "issue", i, len(res.Gaps)+i, func() {
 					ui.Row(c).Gap(8).AlignItems(ui.Center).Children(func() {
 						severityIcon(c, tk, is.Severity)
 						ui.Text(c, categoryLabel(is.Category, lang)).FontSize(tk.FontSizeSM).TextColor(tk.TextTertiary)
@@ -229,6 +244,19 @@ func (k *Kintsugi) corrections(c *ui.Context, tk *theme.Tokens, ch *Check) {
 	})
 }
 
+// markedRow is the row of a gap or an issue, which lights its mark in the
+// text while the pointer is over it.
+func (k *Kintsugi) markedRow(c *ui.Context, tk *theme.Tokens, kind string, i, mark int, children func()) {
+	row := ui.Column(c.Key(fmt.Sprint(kind, i))).Gap(4).Padding(8, 10).Radius(tk.BorderRadius)
+	if row.Hovered() {
+		row.Background(tk.FillQuaternary)
+		k.board.hot = mark
+	} else if k.board.hot == mark {
+		k.board.hot = -1
+	}
+	row.Children(children)
+}
+
 // panelHeader is the logo, the counts of a check and the panel's actions,
 // as icons with tooltips: no words where an icon says it.
 func (k *Kintsugi) panelHeader(c *ui.Context, tk *theme.Tokens, ch *Check) {
@@ -237,10 +265,11 @@ func (k *Kintsugi) panelHeader(c *ui.Context, tk *theme.Tokens, ch *Check) {
 	ui.Row(c).Gap(4).AlignItems(ui.Center).Children(func() {
 		ui.Image(c, logo).Width(18).Height(18).TextColor(tk.Text).Tooltip("Kintsugi")
 		ui.Spacer(c)
-		if done && !explain && len(ch.Result.Issues) > 0 {
+		if done && !explain && ch.Result.Changed() {
 			errs := countErrors(ch.Result.Issues)
-			count(c.Key("errors"), tk, lucide.CircleX(), tk.Error, errs, "error")
-			count(c.Key("suggestions"), tk, lucide.Lightbulb(), tk.Warning, len(ch.Result.Issues)-errs, "suggestion")
+			count(c.Key("gaps"), tk, lucide.Languages(), tk.Info, len(ch.Result.Gaps), "word filled in", "words filled in")
+			count(c.Key("errors"), tk, lucide.CircleX(), tk.Error, errs, "error", "errors")
+			count(c.Key("suggestions"), tk, lucide.Lightbulb(), tk.Warning, len(ch.Result.Issues)-errs, "suggestion", "suggestions")
 		}
 		icon := func(key string, svg *ui.SVG, title string, p action.ActionIconProps) bool {
 			p.Size, p.Title = theme.Small, title
@@ -263,7 +292,7 @@ func (k *Kintsugi) panelHeader(c *ui.Context, tk *theme.Tokens, ch *Check) {
 			if icon("copy", lucide.Copy(), "Copy", action.ActionIconProps{}) {
 				k.act("copy")
 			}
-		case done && len(ch.Result.Issues) > 0:
+		case done && ch.Result.Changed():
 			if replaceAction(ch) == "copy" {
 				if icon("copy", lucide.Copy(), "Copy (⌘↩)", action.ActionIconProps{Variant: action.ActionIconFilled}) {
 					k.act("copy")
@@ -289,7 +318,7 @@ func (k *Kintsugi) panelHeader(c *ui.Context, tk *theme.Tokens, ch *Check) {
 			k.board.pinned = !k.board.pinned
 		}
 		closeTitle := "Close (Esc)"
-		if done && !explain && len(ch.Result.Issues) > 0 {
+		if done && !explain && ch.Result.Changed() {
 			closeTitle = "Ignore (Esc)"
 		}
 		if action.ActionIcon(c.Key("close"), lucide.X(), action.ActionIconProps{Size: theme.Small, Title: closeTitle}).Clicked() {
@@ -309,11 +338,15 @@ func severityIcon(c *ui.Context, tk *theme.Tokens, severity string) {
 
 // count shows n of a kind of issue as its icon and the number, none when
 // n is 0.
-func count(c *ui.Context, tk *theme.Tokens, svg *ui.SVG, color ui.Color, n int, word string) {
+func count(c *ui.Context, tk *theme.Tokens, svg *ui.SVG, color ui.Color, n int, one, many string) {
 	if n == 0 {
 		return
 	}
-	ui.Row(c).Gap(3).AlignItems(ui.Center).Padding(0, 6, 0, 2).Tooltip(plural(n, word)).Children(func() {
+	word := many
+	if n == 1 {
+		word = one
+	}
+	ui.Row(c).Gap(3).AlignItems(ui.Center).Padding(0, 6, 0, 2).Tooltip(fmt.Sprintf("%d %s", n, word)).Children(func() {
 		ui.Image(c, svg).Width(14).Height(14).TextColor(color)
 		ui.Text(c, fmt.Sprint(n)).FontSize(tk.FontSizeSM).FontWeight(600).TextColor(color)
 	})
@@ -359,33 +392,56 @@ func replaceAction(ch *Check) string {
 	return "replace"
 }
 
-// highlight marks each issue's span in the corrected text, the first time
-// it appears after the previous one; the issue hot is lit.
-func highlight(tk *theme.Tokens, text string, issues []llm.Issue, hot int) []ui.Span {
-	var spans []ui.Span
+// highlight marks the gaps and the issues of res in its corrected text, each
+// the first time it appears after the previous one of its kind; the one hot
+// is lit, counting the gaps, then the issues. A gap wins over an issue that
+// overlaps it.
+func highlight(tk *theme.Tokens, res *llm.Result, hot int) []ui.Span {
+	text := res.CorrectedText
+	type mark struct{ start, end, index int }
+	var marks []mark
+	find := func(at int, span string, index int) int {
+		j := strings.Index(text[at:], span)
+		if span == "" || j < 0 {
+			return at
+		}
+		m := mark{at + j, at + j + len(span), index}
+		if !slices.ContainsFunc(marks, func(o mark) bool { return m.start < o.end && o.start < m.end }) {
+			marks = append(marks, m)
+		}
+		return m.end
+	}
 	at := 0
-	for i, is := range issues {
-		if is.Corrected == "" {
-			continue
+	for i, g := range res.Gaps {
+		at = find(at, g.Corrected, i)
+	}
+	at = 0
+	for i, is := range res.Issues {
+		at = find(at, is.Corrected, len(res.Gaps)+i)
+	}
+	slices.SortFunc(marks, func(a, b mark) int { return a.start - b.start })
+
+	var spans []ui.Span
+	at = 0
+	for _, m := range marks {
+		if m.start > at {
+			spans = append(spans, ui.Span{Text: text[at:m.start]})
 		}
-		j := strings.Index(text[at:], is.Corrected)
-		if j < 0 {
-			continue
+		gap := m.index < len(res.Gaps)
+		color, fill := tk.Gold, tk.GoldFillTertiary
+		if gap {
+			color, fill = tk.Info, tk.InfoFillTertiary
 		}
-		j += at
-		if j > at {
-			spans = append(spans, ui.Span{Text: text[at:j]})
-		}
-		s := ui.Span{Text: is.Corrected, Background: tk.GoldFillTertiary, Radius: 3, Underline: true, DecorationColor: tk.Gold, DecorationThickness: 2}
-		if is.Severity != "error" {
+		s := ui.Span{Text: text[m.start:m.end], Background: fill, Radius: 3, Underline: true, DecorationColor: color, DecorationThickness: 2}
+		if !gap && res.Issues[m.index-len(res.Gaps)].Severity != "error" {
 			s.Underline, s.DottedUnderline = false, true
 		}
-		if i == hot {
-			s.Background = tk.Gold
+		if m.index == hot {
+			s.Background = color
 			s.Color = tk.TextLightSolid
 		}
 		spans = append(spans, s)
-		at = j + len(is.Corrected)
+		at = m.end
 	}
 	return append(spans, ui.Span{Text: text[at:]})
 }
