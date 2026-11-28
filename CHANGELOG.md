@@ -3,6 +3,12 @@
 Each version's section is its release notes: the update window shows it,
 and the release workflow puts it on the GitHub release.
 
+## 0.7.1
+
+- The panel is no longer see-through: its solid background, white in light
+  mode and dark in dark mode, keeps a bright desktop from washing out its
+  text.
+
 ## 0.7.0
 
 - Stuck on a word? Write it in Chinese and check as usual: Kintsugi fills in
