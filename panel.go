@@ -38,9 +38,6 @@ type panelState struct {
 func (k *Kintsugi) panelView(c *ui.Context) {
 	theme.Apply(c)
 	tk := theme.TokensOf(c)
-	if c.Vibrancy() {
-		c.Root().Background(ui.Transparent)
-	}
 	ch := k.Current()
 	done := ch != nil && ch.State == "done"
 	explain := ch != nil && ch.Mode == modeExplain
@@ -52,10 +49,7 @@ func (k *Kintsugi) panelView(c *ui.Context) {
 	if compose {
 		c.OnShortcut(ui.Cmd, ui.KeyEnter, k.submitDraft)
 	}
-	page := ui.Column(c).Fill().Padding(14, 16).Gap(10).DragWindow()
-	if !c.Vibrancy() {
-		page.Background(tk.BgElevated)
-	}
+	page := ui.Column(c).Fill().Padding(14, 16).Gap(10).DragWindow().Background(tk.BgElevated)
 	page.Children(func() {
 		k.panelHeader(c, tk, ch)
 		switch {

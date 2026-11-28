@@ -411,10 +411,12 @@ func (k *Kintsugi) OpenWindow(page string) {
 func (k *Kintsugi) makePanel() {
 	k.board.check = func(text string) { go k.checkPasted(text) }
 	p := mygo.NewWindow(mygo.WindowOptions{
-		Panel: true, Hidden: true, Frameless: true, Transparent: true,
-		Vibrancy: mygo.VibrancyHUD, CornerRadius: 14,
+		// Opaque: a see-through material let the desktop show through and
+		// washed out the text over a bright background.
+		Panel: true, Hidden: true, Frameless: true, CornerRadius: 14,
 		Width: 520, Height: 440, MinHeight: 160, MaxHeight: 640,
-		Content: ui.View(k.panelView),
+		BackgroundColor: "light-dark(#ffffff, #1a1a1a)",
+		Content:         ui.View(k.panelView),
 	})
 	// Hide rather than close, so that it shows at once the next time; but
 	// a quit closes every window, and one kept open cancels it.
